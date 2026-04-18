@@ -1,0 +1,27 @@
+[package]
+name = "omsupply-mcp-server"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0"
+description = "MCP server for Open mSupply - enables AI assistants to query inventory, stock, shipments, and more"
+
+[[bin]]
+name = "omsupply-mcp-server"
+path = "src/main.rs"
+
+[dependencies]
+rmcp = { version = "1.5", features = ["server", "macros", "transport-io", "schemars"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "io-std", "sync", "signal"] }
+reqwest = { version = "0.13", features = ["json", "rustls"], default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+schemars = "1.1"
+thiserror = "1"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true
