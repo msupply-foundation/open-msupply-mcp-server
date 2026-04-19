@@ -4,7 +4,7 @@
   "display_name": "Open mSupply",
   "version": "0.1.0",
   "description": "Connect AI assistants to Open mSupply for querying inventory, stock levels, shipments, requisitions, and more.",
-  "long_description": "The Open mSupply MCP server enables AI assistants to interact with your Open mSupply instance via the GraphQL API. Query stock levels, search items, track shipments, view invoices, and get dashboard summaries - all through natural language.\n\nRequires a running Open mSupply server (v2.x+) with valid credentials.",
+  "long_description": "The Open mSupply MCP server enables AI assistants to interact with your Open mSupply instance via the GraphQL API. Query stock levels, search items, track shipments, view invoices, and get dashboard summaries - all through natural language.\n\nShips as a self-contained native binary - no runtime required. Requires a running Open mSupply server (v2.x+) with valid credentials.",
   "author": {
     "name": "mSupply Foundation",
     "url": "https://msupply.foundation"
@@ -22,17 +22,27 @@
     "logistics"
   ],
   "server": {
-    "type": "node",
-    "entry_point": "dist/index.js",
+    "type": "binary",
+    "entry_point": "bin/darwin/omsupply-mcp-server",
     "mcp_config": {
-      "command": "node",
-      "args": ["${__dirname}/dist/index.js"],
+      "command": "${__dirname}/bin/darwin/omsupply-mcp-server",
       "env": {
         "OMSUPPLY_URL": "${user_config.server_url}",
         "OMSUPPLY_USERNAME": "${user_config.username}",
         "OMSUPPLY_PASSWORD": "${user_config.password}",
         "OMSUPPLY_STORE_ID": "${user_config.store_id}",
         "OMSUPPLY_ALLOW_SELF_SIGNED": "${user_config.allow_self_signed}"
+      },
+      "platform_overrides": {
+        "darwin": {
+          "command": "${__dirname}/bin/darwin/omsupply-mcp-server"
+        },
+        "linux": {
+          "command": "${__dirname}/bin/linux/omsupply-mcp-server"
+        },
+        "win32": {
+          "command": "${__dirname}/bin/win32/omsupply-mcp-server.exe"
+        }
       }
     }
   },
@@ -91,9 +101,6 @@
     { "name": "get_master_lists", "description": "Get master lists (item catalogs) available for the store." }
   ],
   "compatibility": {
-    "platforms": ["darwin", "win32", "linux"],
-    "runtimes": {
-      "node": ">=18"
-    }
+    "platforms": ["darwin", "win32", "linux"]
   }
 }

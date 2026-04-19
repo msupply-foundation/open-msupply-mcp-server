@@ -1,5 +1,11 @@
 src/
-tsconfig.json
-node_modules/@types/
-node_modules/typescript/
+target/
+Cargo.toml
+Cargo.lock
+scripts/
+.git/
+.gitignore
+.gitattributes
 *.mcpb
+.DS_Store
+.claude/
