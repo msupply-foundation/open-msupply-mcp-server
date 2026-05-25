@@ -8,6 +8,9 @@
 mod dashboard;
 mod invoices;
 mod items;
+mod programs;
+mod requisitions;
+mod rnr;
 mod stock;
 mod stores;
 
@@ -213,6 +216,263 @@ pub struct SearchNamesParams {
 pub struct GetMasterListsParams {
     /// Search term to match against master list name
     pub search: Option<String>,
+    /// Max results (default 25)
+    pub first: Option<u32>,
+    /// Pagination offset
+    pub offset: Option<u32>,
+    /// Store ID (uses default if not provided)
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+// -------- Requisition param structs --------
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ListRequisitionsParams {
+    /// Filter by type: REQUEST | RESPONSE
+    #[serde(rename = "type")]
+    pub requisition_type: Option<String>,
+    /// Filter by status: DRAFT | NEW | SENT | FINALISED
+    pub status: Option<String>,
+    /// Filter by other party (supplier/customer) name (substring match)
+    #[serde(rename = "otherPartyName")]
+    pub other_party_name: Option<String>,
+    /// Filter by program ID
+    #[serde(rename = "programId")]
+    pub program_id: Option<String>,
+    /// Filter to only emergency requisitions
+    #[serde(rename = "isEmergency")]
+    pub is_emergency: Option<bool>,
+    /// Sort field: requisitionNumber | type | status | otherPartyName | sentDatetime | createdDatetime | finalisedDatetime | expectedDeliveryDate | theirReference | orderType | programName | periodStartDate | comment (default: createdDatetime)
+    #[serde(rename = "sortBy")]
+    pub sort_by: Option<String>,
+    /// Sort descending (default true)
+    pub desc: Option<bool>,
+    /// Max results (default 25)
+    pub first: Option<u32>,
+    /// Pagination offset
+    pub offset: Option<u32>,
+    /// Store ID (uses default if not provided)
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct GetRequisitionParams {
+    /// The requisition ID
+    pub id: String,
+    /// Store ID (uses default if not provided)
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct InsertRequestRequisitionParams {
+    /// Supplier/other party ID (use search_names with isSupplier=true to find one)
+    #[serde(rename = "otherPartyId")]
+    pub other_party_id: String,
+    /// Maximum months of stock to keep on hand (e.g. 6.0)
+    #[serde(rename = "maxMonthsOfStock")]
+    pub max_months_of_stock: f64,
+    /// Minimum months of stock threshold (e.g. 3.0)
+    #[serde(rename = "minMonthsOfStock")]
+    pub min_months_of_stock: f64,
+    /// Their (supplier-side) reference for this requisition
+    #[serde(rename = "theirReference")]
+    pub their_reference: Option<String>,
+    /// Free-form comment
+    pub comment: Option<String>,
+    /// Hex colour code (e.g. "#ff0000") for UI display
+    pub colour: Option<String>,
+    /// Expected delivery date in ISO format (YYYY-MM-DD)
+    #[serde(rename = "expectedDeliveryDate")]
+    pub expected_delivery_date: Option<String>,
+    /// Optional client-supplied UUID. If omitted, a v4 UUID is generated.
+    pub id: Option<String>,
+    /// Store ID (uses default if not provided)
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct UpdateRequestRequisitionParams {
+    /// The requisition ID
+    pub id: String,
+    /// Status transition. Only "SENT" is accepted -- this is how you submit a request requisition.
+    pub status: Option<String>,
+    /// Free-form comment
+    pub comment: Option<String>,
+    /// Their (supplier-side) reference
+    #[serde(rename = "theirReference")]
+    pub their_reference: Option<String>,
+    /// Hex colour code
+    pub colour: Option<String>,
+    /// Change supplier
+    #[serde(rename = "otherPartyId")]
+    pub other_party_id: Option<String>,
+    /// Expected delivery date (YYYY-MM-DD)
+    #[serde(rename = "expectedDeliveryDate")]
+    pub expected_delivery_date: Option<String>,
+    /// Maximum months of stock
+    #[serde(rename = "maxMonthsOfStock")]
+    pub max_months_of_stock: Option<f64>,
+    /// Minimum months of stock
+    #[serde(rename = "minMonthsOfStock")]
+    pub min_months_of_stock: Option<f64>,
+    /// Store ID (uses default if not provided)
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct DeleteByIdParams {
+    /// The record ID to delete
+    pub id: String,
+    /// Store ID (uses default if not provided)
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct InsertRequestRequisitionLineParams {
+    /// The requisition ID this line belongs to
+    #[serde(rename = "requisitionId")]
+    pub requisition_id: String,
+    /// The item ID to request (use search_items to find one)
+    #[serde(rename = "itemId")]
+    pub item_id: String,
+    /// Requested quantity (units). If provided, line is updated immediately after insert.
+    #[serde(rename = "requestedQuantity")]
+    pub requested_quantity: Option<f64>,
+    /// Optional comment about this line
+    pub comment: Option<String>,
+    /// Optional client-supplied UUID for the line
+    pub id: Option<String>,
+    /// Store ID (uses default if not provided)
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct UpdateRequestRequisitionLineParams {
+    /// The requisition line ID
+    pub id: String,
+    /// Requested quantity
+    #[serde(rename = "requestedQuantity")]
+    pub requested_quantity: Option<f64>,
+    /// Comment
+    pub comment: Option<String>,
+    /// Reason / option ID
+    #[serde(rename = "optionId")]
+    pub option_id: Option<String>,
+    /// Store ID (uses default if not provided)
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+// -------- R&R form param structs --------
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ListRnrFormsParams {
+    /// Filter by program ID
+    #[serde(rename = "programId")]
+    pub program_id: Option<String>,
+    /// Filter by period schedule ID
+    #[serde(rename = "periodScheduleId")]
+    pub period_schedule_id: Option<String>,
+    /// Sort field: period | program | createdDatetime | status | supplierName (default: createdDatetime)
+    #[serde(rename = "sortBy")]
+    pub sort_by: Option<String>,
+    /// Sort descending (default true)
+    pub desc: Option<bool>,
+    /// Max results (default 25)
+    pub first: Option<u32>,
+    /// Pagination offset
+    pub offset: Option<u32>,
+    /// Store ID (uses default if not provided)
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct GetRnrFormParams {
+    /// The R&R form ID
+    #[serde(rename = "rnrFormId")]
+    pub rnr_form_id: String,
+    /// Store ID (uses default if not provided)
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct InsertRnrFormParams {
+    /// Supplier name ID (from get_supplier_program_requisition_settings)
+    #[serde(rename = "supplierId")]
+    pub supplier_id: String,
+    /// Program ID (from get_supplier_program_requisition_settings or list_programs)
+    #[serde(rename = "programId")]
+    pub program_id: String,
+    /// Period ID for this reporting period (from list_periods)
+    #[serde(rename = "periodId")]
+    pub period_id: String,
+    /// Optional client-supplied UUID
+    pub id: Option<String>,
+    /// Store ID (uses default if not provided)
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct UpdateRnrFormParams {
+    /// The R&R form ID
+    pub id: String,
+    /// Full array of UpdateRnRFormLineInput objects -- this REPLACES all lines on the form.
+    /// Each line must include: id, stockOutDuration, adjustedQuantityConsumed, averageMonthlyConsumption,
+    /// initialBalance, finalBalance, minimumQuantity, maximumQuantity, calculatedRequestedQuantity,
+    /// lowStock (BELOW_QUARTER | BELOW_HALF | OK), confirmed.
+    /// Optional fields: quantityReceived, quantityConsumed, losses, adjustments, expiryDate (YYYY-MM-DD),
+    /// enteredRequestedQuantity, comment.
+    /// Tip: fetch the current lines with get_rnr_form, modify, then send back.
+    pub lines: serde_json::Value,
+    /// Their (supplier-side) reference
+    #[serde(rename = "theirReference")]
+    pub their_reference: Option<String>,
+    /// Free-form comment
+    pub comment: Option<String>,
+    /// Store ID (uses default if not provided)
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+// -------- Program / period discovery params --------
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ListProgramsParams {
+    /// Search term to match against program name
+    pub search: Option<String>,
+    /// Filter to only immunisation programs
+    #[serde(rename = "isImmunisation")]
+    pub is_immunisation: Option<bool>,
+    /// Max results (default 25)
+    pub first: Option<u32>,
+    /// Pagination offset
+    pub offset: Option<u32>,
+    /// Store ID (uses default if not provided)
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ListPeriodsParams {
+    /// Limit periods to those tied to this program ID
+    #[serde(rename = "programId")]
+    pub program_id: Option<String>,
+    /// Periods starting on or after this date (YYYY-MM-DD)
+    #[serde(rename = "startDateAfter")]
+    pub start_date_after: Option<String>,
+    /// Periods ending on or before this date (YYYY-MM-DD)
+    #[serde(rename = "endDateBefore")]
+    pub end_date_before: Option<String>,
     /// Max results (default 25)
     pub first: Option<u32>,
     /// Pagination offset
@@ -466,6 +726,307 @@ impl OmSupplyServer {
         match dashboard::get_master_lists(&self.client, p.search, p.first, p.offset, p.store_id)
             .await
         {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    // -------- Requisitions --------
+
+    #[tool(description = "List requisitions (request and response) with optional filters by type, status, program, and other party.")]
+    async fn list_requisitions(
+        &self,
+        Parameters(p): Parameters<ListRequisitionsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match requisitions::list_requisitions(
+            &self.client,
+            p.requisition_type,
+            p.status,
+            p.other_party_name,
+            p.program_id,
+            p.is_emergency,
+            p.sort_by,
+            p.desc,
+            p.first,
+            p.offset,
+            p.store_id,
+        )
+        .await
+        {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Get detailed information about a specific requisition including all lines, item stats, and other party.")]
+    async fn get_requisition(
+        &self,
+        Parameters(p): Parameters<GetRequisitionParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match requisitions::get_requisition(&self.client, p.id, p.store_id).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Create a new draft request requisition (this store ordering stock from a supplier). Use search_names with isSupplier=true to find otherPartyId.")]
+    async fn insert_request_requisition(
+        &self,
+        Parameters(p): Parameters<InsertRequestRequisitionParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match requisitions::insert_request_requisition(
+            &self.client,
+            p.other_party_id,
+            p.max_months_of_stock,
+            p.min_months_of_stock,
+            p.their_reference,
+            p.comment,
+            p.colour,
+            p.expected_delivery_date,
+            p.id,
+            p.store_id,
+        )
+        .await
+        {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Update a request requisition. To submit/send a draft requisition to the supplier, set status to 'SENT'.")]
+    async fn update_request_requisition(
+        &self,
+        Parameters(p): Parameters<UpdateRequestRequisitionParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match requisitions::update_request_requisition(
+            &self.client,
+            p.id,
+            p.status,
+            p.comment,
+            p.their_reference,
+            p.colour,
+            p.other_party_id,
+            p.expected_delivery_date,
+            p.max_months_of_stock,
+            p.min_months_of_stock,
+            p.store_id,
+        )
+        .await
+        {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Delete a draft request requisition. Only allowed when status is DRAFT.")]
+    async fn delete_request_requisition(
+        &self,
+        Parameters(p): Parameters<DeleteByIdParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match requisitions::delete_request_requisition(&self.client, p.id, p.store_id).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Add an item line to a draft request requisition. Pass requestedQuantity to set the quantity in one call.")]
+    async fn insert_request_requisition_line(
+        &self,
+        Parameters(p): Parameters<InsertRequestRequisitionLineParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match requisitions::insert_request_requisition_line(
+            &self.client,
+            p.requisition_id,
+            p.item_id,
+            p.requested_quantity,
+            p.comment,
+            p.id,
+            p.store_id,
+        )
+        .await
+        {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Update a line on a draft request requisition (requested quantity, comment, or reason).")]
+    async fn update_request_requisition_line(
+        &self,
+        Parameters(p): Parameters<UpdateRequestRequisitionLineParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match requisitions::update_request_requisition_line(
+            &self.client,
+            p.id,
+            p.requested_quantity,
+            p.comment,
+            p.option_id,
+            p.store_id,
+        )
+        .await
+        {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Remove a line from a draft request requisition.")]
+    async fn delete_request_requisition_line(
+        &self,
+        Parameters(p): Parameters<DeleteByIdParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match requisitions::delete_request_requisition_line(&self.client, p.id, p.store_id).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    // -------- R&R forms --------
+
+    #[tool(description = "List R&R (Report and Requisition) forms with optional program/period filters.")]
+    async fn list_rnr_forms(
+        &self,
+        Parameters(p): Parameters<ListRnrFormsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match rnr::list_rnr_forms(
+            &self.client,
+            p.program_id,
+            p.period_schedule_id,
+            p.sort_by,
+            p.desc,
+            p.first,
+            p.offset,
+            p.store_id,
+        )
+        .await
+        {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Get a specific R&R form including all line consumption and balance data.")]
+    async fn get_rnr_form(
+        &self,
+        Parameters(p): Parameters<GetRnrFormParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match rnr::get_rnr_form(&self.client, p.rnr_form_id, p.store_id).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Create a new draft R&R form for a supplier, program, and reporting period. Use get_supplier_program_requisition_settings to discover valid combinations.")]
+    async fn insert_rnr_form(
+        &self,
+        Parameters(p): Parameters<InsertRnrFormParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match rnr::insert_rnr_form(
+            &self.client,
+            p.supplier_id,
+            p.program_id,
+            p.period_id,
+            p.id,
+            p.store_id,
+        )
+        .await
+        {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Update an R&R form. The 'lines' array REPLACES all existing lines -- fetch the current form, modify, send back.")]
+    async fn update_rnr_form(
+        &self,
+        Parameters(p): Parameters<UpdateRnrFormParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match rnr::update_rnr_form(
+            &self.client,
+            p.id,
+            p.lines,
+            p.their_reference,
+            p.comment,
+            p.store_id,
+        )
+        .await
+        {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Finalise an R&R form -- submits it to the supplier. Status moves DRAFT -> FINALISED and the form becomes immutable.")]
+    async fn finalise_rnr_form(
+        &self,
+        Parameters(p): Parameters<DeleteByIdParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match rnr::finalise_rnr_form(&self.client, p.id, p.store_id).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Delete a draft R&R form. Only allowed when status is DRAFT.")]
+    async fn delete_rnr_form(
+        &self,
+        Parameters(p): Parameters<DeleteByIdParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match rnr::delete_rnr_form(&self.client, p.id, p.store_id).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    // -------- Program / period discovery --------
+
+    #[tool(description = "List programs available in this store (e.g. HIV, TB, immunisation programs). Needed to find programId for R&R forms.")]
+    async fn list_programs(
+        &self,
+        Parameters(p): Parameters<ListProgramsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match programs::list_programs(
+            &self.client,
+            p.search,
+            p.is_immunisation,
+            p.first,
+            p.offset,
+            p.store_id,
+        )
+        .await
+        {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "List reporting periods, optionally filtered by program and date range. Needed to find periodId for R&R forms.")]
+    async fn list_periods(
+        &self,
+        Parameters(p): Parameters<ListPeriodsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match programs::list_periods(
+            &self.client,
+            p.program_id,
+            p.start_date_after,
+            p.end_date_before,
+            p.first,
+            p.offset,
+            p.store_id,
+        )
+        .await
+        {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Get the program requisition settings configured for this store -- which programs are available, valid suppliers, order types, and available periods. The starting point for creating R&R forms or program requisitions.")]
+    async fn get_supplier_program_requisition_settings(
+        &self,
+        Parameters(p): Parameters<StoreIdParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match programs::get_supplier_program_requisition_settings(&self.client, p.store_id).await {
             Ok(t) => ok(t),
             Err(e) => err(e),
         }

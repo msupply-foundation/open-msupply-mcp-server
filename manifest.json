@@ -98,7 +98,24 @@
     { "name": "get_dashboard_summary", "description": "Get a comprehensive dashboard summary of stock health, shipments, and requisitions." },
     { "name": "get_requisition_counts", "description": "Get counts of requisitions by status." },
     { "name": "search_names", "description": "Search for suppliers, customers, and facilities by name or code." },
-    { "name": "get_master_lists", "description": "Get master lists (item catalogs) available for the store." }
+    { "name": "get_master_lists", "description": "Get master lists (item catalogs) available for the store." },
+    { "name": "list_requisitions", "description": "List requisitions (request and response) with optional filters." },
+    { "name": "get_requisition", "description": "Get detailed information about a requisition including all lines." },
+    { "name": "insert_request_requisition", "description": "Create a new draft request requisition." },
+    { "name": "update_request_requisition", "description": "Update a request requisition; set status to SENT to submit." },
+    { "name": "delete_request_requisition", "description": "Delete a draft request requisition." },
+    { "name": "insert_request_requisition_line", "description": "Add an item line to a request requisition." },
+    { "name": "update_request_requisition_line", "description": "Update a request requisition line (quantity, comment)." },
+    { "name": "delete_request_requisition_line", "description": "Remove a line from a request requisition." },
+    { "name": "list_rnr_forms", "description": "List R&R (Report and Requisition) forms." },
+    { "name": "get_rnr_form", "description": "Get a specific R&R form with all line consumption data." },
+    { "name": "insert_rnr_form", "description": "Create a new draft R&R form for a program and period." },
+    { "name": "update_rnr_form", "description": "Update an R&R form's lines and metadata." },
+    { "name": "finalise_rnr_form", "description": "Finalise (submit) an R&R form to the supplier." },
+    { "name": "delete_rnr_form", "description": "Delete a draft R&R form." },
+    { "name": "list_programs", "description": "List programs (e.g. HIV, TB, immunisation) available in the store." },
+    { "name": "list_periods", "description": "List reporting periods, filterable by program and date range." },
+    { "name": "get_supplier_program_requisition_settings", "description": "Get programs/suppliers/periods configured for R&R forms in this store." }
   ],
   "compatibility": {
     "platforms": ["darwin", "win32", "linux"]
