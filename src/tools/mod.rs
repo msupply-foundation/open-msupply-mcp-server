@@ -6,12 +6,16 @@
 //! 3. converts `Result<String, AppError>` into the MCP `CallToolResult` envelope.
 
 mod dashboard;
+mod inbound_shipments;
 mod invoices;
 mod items;
+mod outbound_shipments;
 mod programs;
+mod purchase_orders;
 mod requisitions;
 mod rnr;
 mod stock;
+mod stocktakes;
 mod stores;
 
 use std::sync::Arc;
@@ -478,6 +482,518 @@ pub struct ListPeriodsParams {
     /// Pagination offset
     pub offset: Option<u32>,
     /// Store ID (uses default if not provided)
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+// -------- Outbound shipment params --------
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct InsertOutboundShipmentParams {
+    /// Customer ID (use search_names with isCustomer=true)
+    #[serde(rename = "otherPartyId")]
+    pub other_party_id: String,
+    /// Place shipment on hold
+    #[serde(rename = "onHold")]
+    pub on_hold: Option<bool>,
+    pub comment: Option<String>,
+    #[serde(rename = "theirReference")]
+    pub their_reference: Option<String>,
+    pub colour: Option<String>,
+    /// Optional client-supplied UUID
+    pub id: Option<String>,
+    /// Store ID (uses default if not provided)
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct UpdateOutboundShipmentParams {
+    /// The shipment ID
+    pub id: String,
+    /// Status transition: ALLOCATED | PICKED | SHIPPED (cannot reverse)
+    pub status: Option<String>,
+    #[serde(rename = "onHold")]
+    pub on_hold: Option<bool>,
+    pub comment: Option<String>,
+    #[serde(rename = "theirReference")]
+    pub their_reference: Option<String>,
+    #[serde(rename = "transportReference")]
+    pub transport_reference: Option<String>,
+    pub colour: Option<String>,
+    /// Expected delivery date (YYYY-MM-DD)
+    #[serde(rename = "expectedDeliveryDate")]
+    pub expected_delivery_date: Option<String>,
+    /// ISO-8601 UTC datetime (e.g. "2026-01-15T10:00:00Z"). When supplied alongside
+    /// a status transition, the server walks all earlier status timestamps back to
+    /// this value -- creating a fully historic shipment in one call.
+    #[serde(rename = "backdatedDatetime")]
+    pub backdated_datetime: Option<String>,
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct InsertOutboundShipmentLineParams {
+    /// Invoice (shipment) ID this line belongs to
+    #[serde(rename = "invoiceId")]
+    pub invoice_id: String,
+    /// Stock line ID to issue from (use get_stock_lines to discover)
+    #[serde(rename = "stockLineId")]
+    pub stock_line_id: String,
+    /// Number of packs to issue
+    #[serde(rename = "numberOfPacks")]
+    pub number_of_packs: f64,
+    #[serde(rename = "taxPercentage")]
+    pub tax_percentage: Option<f64>,
+    #[serde(rename = "vvmStatusId")]
+    pub vvm_status_id: Option<String>,
+    pub id: Option<String>,
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct UpdateOutboundShipmentLineParams {
+    pub id: String,
+    #[serde(rename = "stockLineId")]
+    pub stock_line_id: Option<String>,
+    #[serde(rename = "numberOfPacks")]
+    pub number_of_packs: Option<f64>,
+    #[serde(rename = "prescribedQuantity")]
+    pub prescribed_quantity: Option<f64>,
+    #[serde(rename = "vvmStatusId")]
+    pub vvm_status_id: Option<String>,
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+// -------- Inbound shipment params --------
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct InsertInboundShipmentParams {
+    /// Supplier ID (use search_names with isSupplier=true)
+    #[serde(rename = "otherPartyId")]
+    pub other_party_id: String,
+    #[serde(rename = "onHold")]
+    pub on_hold: Option<bool>,
+    pub comment: Option<String>,
+    #[serde(rename = "theirReference")]
+    pub their_reference: Option<String>,
+    pub colour: Option<String>,
+    /// Optionally link to a requisition
+    #[serde(rename = "requisitionId")]
+    pub requisition_id: Option<String>,
+    /// Optionally link to a purchase order
+    #[serde(rename = "purchaseOrderId")]
+    pub purchase_order_id: Option<String>,
+    /// If true and purchaseOrderId set, pre-fill lines from the PO
+    #[serde(rename = "insertLinesFromPurchaseOrder")]
+    pub insert_lines_from_purchase_order: Option<bool>,
+    pub id: Option<String>,
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct UpdateInboundShipmentParams {
+    pub id: String,
+    /// Status transition: SHIPPED | DELIVERED | RECEIVED | VERIFIED (cannot reverse).
+    /// Only `receivedDatetime` is backdate-able; delivered/verified are server-stamped.
+    pub status: Option<String>,
+    #[serde(rename = "onHold")]
+    pub on_hold: Option<bool>,
+    pub comment: Option<String>,
+    #[serde(rename = "theirReference")]
+    pub their_reference: Option<String>,
+    pub colour: Option<String>,
+    #[serde(rename = "otherPartyId")]
+    pub other_party_id: Option<String>,
+    /// ISO-8601 UTC datetime to backdate the received timestamp
+    #[serde(rename = "receivedDatetime")]
+    pub received_datetime: Option<String>,
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct InsertInboundShipmentLineParams {
+    #[serde(rename = "invoiceId")]
+    pub invoice_id: String,
+    /// Item being received (use search_items)
+    #[serde(rename = "itemId")]
+    pub item_id: String,
+    /// Pack size (units per pack)
+    #[serde(rename = "packSize")]
+    pub pack_size: f64,
+    /// Number of packs being received
+    #[serde(rename = "numberOfPacks")]
+    pub number_of_packs: f64,
+    #[serde(rename = "costPricePerPack")]
+    pub cost_price_per_pack: f64,
+    #[serde(rename = "sellPricePerPack")]
+    pub sell_price_per_pack: f64,
+    pub batch: Option<String>,
+    /// Expiry date (YYYY-MM-DD)
+    #[serde(rename = "expiryDate")]
+    pub expiry_date: Option<String>,
+    /// Manufacture date (YYYY-MM-DD)
+    #[serde(rename = "manufactureDate")]
+    pub manufacture_date: Option<String>,
+    #[serde(rename = "locationId")]
+    pub location_id: Option<String>,
+    pub note: Option<String>,
+    #[serde(rename = "taxPercentage")]
+    pub tax_percentage: Option<f64>,
+    #[serde(rename = "totalBeforeTax")]
+    pub total_before_tax: Option<f64>,
+    #[serde(rename = "itemVariantId")]
+    pub item_variant_id: Option<String>,
+    #[serde(rename = "vvmStatusId")]
+    pub vvm_status_id: Option<String>,
+    #[serde(rename = "donorId")]
+    pub donor_id: Option<String>,
+    #[serde(rename = "manufacturerId")]
+    pub manufacturer_id: Option<String>,
+    #[serde(rename = "campaignId")]
+    pub campaign_id: Option<String>,
+    #[serde(rename = "programId")]
+    pub program_id: Option<String>,
+    /// Link this received line back to a purchase order line
+    #[serde(rename = "purchaseOrderLineId")]
+    pub purchase_order_line_id: Option<String>,
+    pub id: Option<String>,
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct UpdateInboundShipmentLineParams {
+    pub id: String,
+    #[serde(rename = "itemId")]
+    pub item_id: Option<String>,
+    #[serde(rename = "packSize")]
+    pub pack_size: Option<f64>,
+    #[serde(rename = "numberOfPacks")]
+    pub number_of_packs: Option<f64>,
+    #[serde(rename = "costPricePerPack")]
+    pub cost_price_per_pack: Option<f64>,
+    #[serde(rename = "sellPricePerPack")]
+    pub sell_price_per_pack: Option<f64>,
+    pub batch: Option<String>,
+    #[serde(rename = "expiryDate")]
+    pub expiry_date: Option<String>,
+    #[serde(rename = "manufactureDate")]
+    pub manufacture_date: Option<String>,
+    #[serde(rename = "locationId")]
+    pub location_id: Option<String>,
+    pub note: Option<String>,
+    /// Line status (rare - normally set via shipment status)
+    pub status: Option<String>,
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+// -------- Stocktake params --------
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct InsertStocktakeParams {
+    /// Create a stocktake covering all items in the store
+    #[serde(rename = "isAllItemsStocktake")]
+    pub is_all_items_stocktake: Option<bool>,
+    /// Limit stocktake to a master list (item catalog)
+    #[serde(rename = "masterListId")]
+    pub master_list_id: Option<String>,
+    /// Include all master list items even those with no current stock
+    #[serde(rename = "includeAllMasterListItems")]
+    pub include_all_master_list_items: Option<bool>,
+    /// Limit stocktake to a specific storage location
+    #[serde(rename = "locationId")]
+    pub location_id: Option<String>,
+    #[serde(rename = "vvmStatusId")]
+    pub vvm_status_id: Option<String>,
+    /// Only include stock lines expiring before this date (YYYY-MM-DD)
+    #[serde(rename = "expiresBefore")]
+    pub expires_before: Option<String>,
+    /// First-ever stocktake for the store (creates baseline)
+    #[serde(rename = "isInitialStocktake")]
+    pub is_initial_stocktake: Option<bool>,
+    /// Create stocktake with no lines (add via insert_stocktake_line)
+    #[serde(rename = "createBlankStocktake")]
+    pub create_blank_stocktake: Option<bool>,
+    pub description: Option<String>,
+    pub comment: Option<String>,
+    pub id: Option<String>,
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct UpdateStocktakeParams {
+    pub id: String,
+    /// Set to "FINALISED" to finalise the stocktake (only valid transition).
+    pub status: Option<String>,
+    /// Operational date for the stocktake (YYYY-MM-DD). This is the date the
+    /// physical count took place -- the only date the GraphQL API lets you
+    /// backdate. `createdDatetime` and `finalisedDatetime` are server-stamped.
+    #[serde(rename = "stocktakeDate")]
+    pub stocktake_date: Option<String>,
+    pub description: Option<String>,
+    pub comment: Option<String>,
+    #[serde(rename = "isLocked")]
+    pub is_locked: Option<bool>,
+    #[serde(rename = "countedBy")]
+    pub counted_by: Option<String>,
+    #[serde(rename = "verifiedBy")]
+    pub verified_by: Option<String>,
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct InsertStocktakeLineParams {
+    #[serde(rename = "stocktakeId")]
+    pub stocktake_id: String,
+    /// Existing stock line to count (if known); otherwise provide itemId + batch
+    #[serde(rename = "stockLineId")]
+    pub stock_line_id: Option<String>,
+    #[serde(rename = "itemId")]
+    pub item_id: Option<String>,
+    /// Counted physical packs
+    #[serde(rename = "countedNumberOfPacks")]
+    pub counted_number_of_packs: Option<f64>,
+    pub batch: Option<String>,
+    #[serde(rename = "expiryDate")]
+    pub expiry_date: Option<String>,
+    #[serde(rename = "manufactureDate")]
+    pub manufacture_date: Option<String>,
+    #[serde(rename = "packSize")]
+    pub pack_size: Option<f64>,
+    #[serde(rename = "costPricePerPack")]
+    pub cost_price_per_pack: Option<f64>,
+    #[serde(rename = "sellPricePerPack")]
+    pub sell_price_per_pack: Option<f64>,
+    #[serde(rename = "locationId")]
+    pub location_id: Option<String>,
+    pub note: Option<String>,
+    #[serde(rename = "reasonOptionId")]
+    pub reason_option_id: Option<String>,
+    #[serde(rename = "itemVariantId")]
+    pub item_variant_id: Option<String>,
+    #[serde(rename = "donorId")]
+    pub donor_id: Option<String>,
+    #[serde(rename = "manufacturerId")]
+    pub manufacturer_id: Option<String>,
+    #[serde(rename = "vvmStatusId")]
+    pub vvm_status_id: Option<String>,
+    #[serde(rename = "campaignId")]
+    pub campaign_id: Option<String>,
+    #[serde(rename = "programId")]
+    pub program_id: Option<String>,
+    pub comment: Option<String>,
+    pub id: Option<String>,
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct UpdateStocktakeLineParams {
+    pub id: String,
+    #[serde(rename = "countedNumberOfPacks")]
+    pub counted_number_of_packs: Option<f64>,
+    #[serde(rename = "snapshotNumberOfPacks")]
+    pub snapshot_number_of_packs: Option<f64>,
+    pub batch: Option<String>,
+    #[serde(rename = "expiryDate")]
+    pub expiry_date: Option<String>,
+    #[serde(rename = "manufactureDate")]
+    pub manufacture_date: Option<String>,
+    #[serde(rename = "packSize")]
+    pub pack_size: Option<f64>,
+    #[serde(rename = "costPricePerPack")]
+    pub cost_price_per_pack: Option<f64>,
+    #[serde(rename = "sellPricePerPack")]
+    pub sell_price_per_pack: Option<f64>,
+    #[serde(rename = "locationId")]
+    pub location_id: Option<String>,
+    pub note: Option<String>,
+    #[serde(rename = "reasonOptionId")]
+    pub reason_option_id: Option<String>,
+    pub comment: Option<String>,
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+// -------- Purchase order params --------
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ListPurchaseOrdersParams {
+    /// Status filter: NEW | REQUEST_APPROVAL | CONFIRMED | SENT | FINALISED
+    pub status: Option<String>,
+    #[serde(rename = "supplierId")]
+    pub supplier_id: Option<String>,
+    /// Sort by createdDatetime | number | status | supplier | sentDatetime (default createdDatetime)
+    #[serde(rename = "sortBy")]
+    pub sort_by: Option<String>,
+    pub desc: Option<bool>,
+    pub first: Option<u32>,
+    pub offset: Option<u32>,
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct GetPurchaseOrderParams {
+    pub id: String,
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct InsertPurchaseOrderParams {
+    /// Supplier ID (use search_names with isSupplier=true)
+    #[serde(rename = "supplierId")]
+    pub supplier_id: String,
+    pub id: Option<String>,
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct UpdatePurchaseOrderParams {
+    pub id: String,
+    /// Status transition: NEW | REQUEST_APPROVAL | CONFIRMED | SENT | FINALISED
+    pub status: Option<String>,
+    #[serde(rename = "supplierId")]
+    pub supplier_id: Option<String>,
+    /// ISO datetime (YYYY-MM-DDTHH:MM:SS) — when the order was confirmed
+    #[serde(rename = "confirmedDatetime")]
+    pub confirmed_datetime: Option<String>,
+    /// ISO datetime (YYYY-MM-DDTHH:MM:SS) — when the order was sent to supplier
+    #[serde(rename = "sentDatetime")]
+    pub sent_datetime: Option<String>,
+    /// Date (YYYY-MM-DD) — when contract was signed
+    #[serde(rename = "contractSignedDate")]
+    pub contract_signed_date: Option<String>,
+    /// Date (YYYY-MM-DD) — when advance payment was made
+    #[serde(rename = "advancePaidDate")]
+    pub advance_paid_date: Option<String>,
+    /// Date (YYYY-MM-DD) — when goods arrived at port
+    #[serde(rename = "receivedAtPortDate")]
+    pub received_at_port_date: Option<String>,
+    /// Date (YYYY-MM-DD) — when delivery is requested for
+    #[serde(rename = "requestedDeliveryDate")]
+    pub requested_delivery_date: Option<String>,
+    pub comment: Option<String>,
+    pub reference: Option<String>,
+    #[serde(rename = "supplierDiscountPercentage")]
+    pub supplier_discount_percentage: Option<f64>,
+    #[serde(rename = "supplierDiscountAmount")]
+    pub supplier_discount_amount: Option<f64>,
+    #[serde(rename = "currencyId")]
+    pub currency_id: Option<String>,
+    #[serde(rename = "foreignExchangeRate")]
+    pub foreign_exchange_rate: Option<f64>,
+    #[serde(rename = "shippingMethod")]
+    pub shipping_method: Option<String>,
+    #[serde(rename = "donorId")]
+    pub donor_id: Option<String>,
+    #[serde(rename = "supplierAgent")]
+    pub supplier_agent: Option<String>,
+    #[serde(rename = "authorisingOfficer1")]
+    pub authorising_officer_1: Option<String>,
+    #[serde(rename = "authorisingOfficer2")]
+    pub authorising_officer_2: Option<String>,
+    #[serde(rename = "additionalInstructions")]
+    pub additional_instructions: Option<String>,
+    #[serde(rename = "headingMessage")]
+    pub heading_message: Option<String>,
+    #[serde(rename = "agentCommission")]
+    pub agent_commission: Option<f64>,
+    #[serde(rename = "documentCharge")]
+    pub document_charge: Option<f64>,
+    #[serde(rename = "communicationsCharge")]
+    pub communications_charge: Option<f64>,
+    #[serde(rename = "insuranceCharge")]
+    pub insurance_charge: Option<f64>,
+    #[serde(rename = "freightCharge")]
+    pub freight_charge: Option<f64>,
+    #[serde(rename = "freightConditions")]
+    pub freight_conditions: Option<String>,
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct InsertPurchaseOrderLineParams {
+    #[serde(rename = "purchaseOrderId")]
+    pub purchase_order_id: String,
+    /// Either the item ID (UUID) or the item code (e.g. "AMOX250")
+    #[serde(rename = "itemIdOrCode")]
+    pub item_id_or_code: String,
+    #[serde(rename = "requestedPackSize")]
+    pub requested_pack_size: Option<f64>,
+    #[serde(rename = "requestedNumberOfUnits")]
+    pub requested_number_of_units: Option<f64>,
+    /// Date YYYY-MM-DD
+    #[serde(rename = "requestedDeliveryDate")]
+    pub requested_delivery_date: Option<String>,
+    /// Date YYYY-MM-DD
+    #[serde(rename = "expectedDeliveryDate")]
+    pub expected_delivery_date: Option<String>,
+    #[serde(rename = "pricePerPackBeforeDiscount")]
+    pub price_per_pack_before_discount: Option<f64>,
+    #[serde(rename = "pricePerPackAfterDiscount")]
+    pub price_per_pack_after_discount: Option<f64>,
+    #[serde(rename = "manufacturerId")]
+    pub manufacturer_id: Option<String>,
+    pub note: Option<String>,
+    pub unit: Option<String>,
+    #[serde(rename = "supplierItemCode")]
+    pub supplier_item_code: Option<String>,
+    pub comment: Option<String>,
+    pub id: Option<String>,
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct UpdatePurchaseOrderLineParams {
+    pub id: String,
+    #[serde(rename = "itemId")]
+    pub item_id: Option<String>,
+    #[serde(rename = "requestedPackSize")]
+    pub requested_pack_size: Option<f64>,
+    #[serde(rename = "requestedNumberOfUnits")]
+    pub requested_number_of_units: Option<f64>,
+    /// Requires AuthorisePurchaseOrder permission
+    #[serde(rename = "adjustedNumberOfUnits")]
+    pub adjusted_number_of_units: Option<f64>,
+    #[serde(rename = "requestedDeliveryDate")]
+    pub requested_delivery_date: Option<String>,
+    #[serde(rename = "expectedDeliveryDate")]
+    pub expected_delivery_date: Option<String>,
+    #[serde(rename = "pricePerPackBeforeDiscount")]
+    pub price_per_pack_before_discount: Option<f64>,
+    #[serde(rename = "pricePerPackAfterDiscount")]
+    pub price_per_pack_after_discount: Option<f64>,
+    #[serde(rename = "manufacturerId")]
+    pub manufacturer_id: Option<String>,
+    pub note: Option<String>,
+    pub unit: Option<String>,
+    #[serde(rename = "supplierItemCode")]
+    pub supplier_item_code: Option<String>,
+    pub comment: Option<String>,
+    /// Line status: NEW | SENT | CLOSED
+    pub status: Option<String>,
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct DeletePurchaseOrderLinesParams {
+    /// Line IDs to delete (bulk)
+    pub ids: Vec<String>,
     #[serde(rename = "storeId")]
     pub store_id: Option<String>,
 }
@@ -1027,6 +1543,583 @@ impl OmSupplyServer {
         Parameters(p): Parameters<StoreIdParams>,
     ) -> Result<CallToolResult, McpError> {
         match programs::get_supplier_program_requisition_settings(&self.client, p.store_id).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    // -------- Outbound shipments --------
+
+    #[tool(description = "Create a new draft outbound shipment (this store issuing stock to a customer). Use search_names with isCustomer=true to find otherPartyId.")]
+    async fn insert_outbound_shipment(
+        &self,
+        Parameters(p): Parameters<InsertOutboundShipmentParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match outbound_shipments::insert_outbound_shipment(
+            &self.client,
+            p.other_party_id,
+            p.on_hold,
+            p.comment,
+            p.their_reference,
+            p.colour,
+            p.id,
+            p.store_id,
+        )
+        .await
+        {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Update an outbound shipment. Set status to advance through NEW->ALLOCATED->PICKED->SHIPPED. Pass `backdatedDatetime` (ISO 8601 UTC) alongside a status change to backdate the entire shipment chain — useful for seeding historic data.")]
+    async fn update_outbound_shipment(
+        &self,
+        Parameters(p): Parameters<UpdateOutboundShipmentParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match outbound_shipments::update_outbound_shipment(
+            &self.client,
+            p.id,
+            p.status,
+            p.on_hold,
+            p.comment,
+            p.their_reference,
+            p.transport_reference,
+            p.colour,
+            p.expected_delivery_date,
+            p.backdated_datetime,
+            p.store_id,
+        )
+        .await
+        {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Delete an outbound shipment. Only allowed while status is NEW.")]
+    async fn delete_outbound_shipment(
+        &self,
+        Parameters(p): Parameters<DeleteByIdParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match outbound_shipments::delete_outbound_shipment(&self.client, p.id, p.store_id).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Add a stock line to an outbound shipment. Issues a specific batch from current stock — use get_stock_lines to find stockLineId.")]
+    async fn insert_outbound_shipment_line(
+        &self,
+        Parameters(p): Parameters<InsertOutboundShipmentLineParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match outbound_shipments::insert_outbound_shipment_line(
+            &self.client,
+            p.invoice_id,
+            p.stock_line_id,
+            p.number_of_packs,
+            p.tax_percentage,
+            p.vvm_status_id,
+            p.id,
+            p.store_id,
+        )
+        .await
+        {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Update an outbound shipment line (quantity, batch, etc.).")]
+    async fn update_outbound_shipment_line(
+        &self,
+        Parameters(p): Parameters<UpdateOutboundShipmentLineParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match outbound_shipments::update_outbound_shipment_line(
+            &self.client,
+            p.id,
+            p.stock_line_id,
+            p.number_of_packs,
+            p.prescribed_quantity,
+            p.vvm_status_id,
+            p.store_id,
+        )
+        .await
+        {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Remove a line from an outbound shipment.")]
+    async fn delete_outbound_shipment_line(
+        &self,
+        Parameters(p): Parameters<DeleteByIdParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match outbound_shipments::delete_outbound_shipment_line(&self.client, p.id, p.store_id)
+            .await
+        {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    // -------- Inbound shipments (a.k.a. goods receipts) --------
+
+    #[tool(description = "Create a new draft inbound shipment (this store receiving stock from a supplier). In Open mSupply, inbound shipments are how 'goods receipts' are represented. Use search_names with isSupplier=true.")]
+    async fn insert_inbound_shipment(
+        &self,
+        Parameters(p): Parameters<InsertInboundShipmentParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match inbound_shipments::insert_inbound_shipment(
+            &self.client,
+            p.other_party_id,
+            p.on_hold,
+            p.comment,
+            p.their_reference,
+            p.colour,
+            p.requisition_id,
+            p.purchase_order_id,
+            p.insert_lines_from_purchase_order,
+            p.id,
+            p.store_id,
+        )
+        .await
+        {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Update an inbound shipment. Set status to advance through SHIPPED->DELIVERED->RECEIVED->VERIFIED. `receivedDatetime` is the ONLY backdate-able datetime — delivered/verified are server-stamped at the moment of transition.")]
+    async fn update_inbound_shipment(
+        &self,
+        Parameters(p): Parameters<UpdateInboundShipmentParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match inbound_shipments::update_inbound_shipment(
+            &self.client,
+            p.id,
+            p.status,
+            p.on_hold,
+            p.comment,
+            p.their_reference,
+            p.colour,
+            p.other_party_id,
+            p.received_datetime,
+            p.store_id,
+        )
+        .await
+        {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Delete an inbound shipment. Only allowed while status is NEW.")]
+    async fn delete_inbound_shipment(
+        &self,
+        Parameters(p): Parameters<DeleteByIdParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match inbound_shipments::delete_inbound_shipment(&self.client, p.id, p.store_id).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Add a received item line to an inbound shipment. Supports expiryDate and manufactureDate for realistic batch ageing — essential for seeding historic stock data.")]
+    async fn insert_inbound_shipment_line(
+        &self,
+        Parameters(p): Parameters<InsertInboundShipmentLineParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match inbound_shipments::insert_inbound_shipment_line(
+            &self.client,
+            p.invoice_id,
+            p.item_id,
+            p.pack_size,
+            p.number_of_packs,
+            p.cost_price_per_pack,
+            p.sell_price_per_pack,
+            p.batch,
+            p.expiry_date,
+            p.manufacture_date,
+            p.location_id,
+            p.note,
+            p.tax_percentage,
+            p.total_before_tax,
+            p.item_variant_id,
+            p.vvm_status_id,
+            p.donor_id,
+            p.manufacturer_id,
+            p.campaign_id,
+            p.program_id,
+            p.purchase_order_line_id,
+            p.id,
+            p.store_id,
+        )
+        .await
+        {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Update an inbound shipment line (batch, expiry, quantity, etc.).")]
+    async fn update_inbound_shipment_line(
+        &self,
+        Parameters(p): Parameters<UpdateInboundShipmentLineParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match inbound_shipments::update_inbound_shipment_line(
+            &self.client,
+            p.id,
+            p.item_id,
+            p.pack_size,
+            p.number_of_packs,
+            p.cost_price_per_pack,
+            p.sell_price_per_pack,
+            p.batch,
+            p.expiry_date,
+            p.manufacture_date,
+            p.location_id,
+            p.note,
+            p.status,
+            p.store_id,
+        )
+        .await
+        {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Remove a line from an inbound shipment.")]
+    async fn delete_inbound_shipment_line(
+        &self,
+        Parameters(p): Parameters<DeleteByIdParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match inbound_shipments::delete_inbound_shipment_line(&self.client, p.id, p.store_id)
+            .await
+        {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    // -------- Stocktakes --------
+
+    #[tool(description = "Create a new draft stocktake (physical inventory count). Can be limited by master list, location, or expiry filter. Use createBlankStocktake=true to start empty and add lines manually.")]
+    async fn insert_stocktake(
+        &self,
+        Parameters(p): Parameters<InsertStocktakeParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match stocktakes::insert_stocktake(
+            &self.client,
+            p.is_all_items_stocktake,
+            p.master_list_id,
+            p.include_all_master_list_items,
+            p.location_id,
+            p.vvm_status_id,
+            p.expires_before,
+            p.is_initial_stocktake,
+            p.create_blank_stocktake,
+            p.description,
+            p.comment,
+            p.id,
+            p.store_id,
+        )
+        .await
+        {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Update a stocktake. Set `stocktakeDate` (YYYY-MM-DD) to record when the count was actually performed (the only date you can backdate). Set status='FINALISED' to commit counts to inventory.")]
+    async fn update_stocktake(
+        &self,
+        Parameters(p): Parameters<UpdateStocktakeParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match stocktakes::update_stocktake(
+            &self.client,
+            p.id,
+            p.status,
+            p.stocktake_date,
+            p.description,
+            p.comment,
+            p.is_locked,
+            p.counted_by,
+            p.verified_by,
+            p.store_id,
+        )
+        .await
+        {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Delete a draft stocktake. Only allowed while status is NEW.")]
+    async fn delete_stocktake(
+        &self,
+        Parameters(p): Parameters<DeleteByIdParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match stocktakes::delete_stocktake(&self.client, p.id, p.store_id).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Add a line to a stocktake. Either reference an existing stockLineId or provide itemId + batch + packSize. Set countedNumberOfPacks to record what was found.")]
+    async fn insert_stocktake_line(
+        &self,
+        Parameters(p): Parameters<InsertStocktakeLineParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match stocktakes::insert_stocktake_line(
+            &self.client,
+            p.stocktake_id,
+            p.stock_line_id,
+            p.item_id,
+            p.counted_number_of_packs,
+            p.batch,
+            p.expiry_date,
+            p.manufacture_date,
+            p.pack_size,
+            p.cost_price_per_pack,
+            p.sell_price_per_pack,
+            p.location_id,
+            p.note,
+            p.reason_option_id,
+            p.item_variant_id,
+            p.donor_id,
+            p.manufacturer_id,
+            p.vvm_status_id,
+            p.campaign_id,
+            p.program_id,
+            p.comment,
+            p.id,
+            p.store_id,
+        )
+        .await
+        {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Update a stocktake line (counted packs, batch, expiry, etc.).")]
+    async fn update_stocktake_line(
+        &self,
+        Parameters(p): Parameters<UpdateStocktakeLineParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match stocktakes::update_stocktake_line(
+            &self.client,
+            p.id,
+            p.counted_number_of_packs,
+            p.snapshot_number_of_packs,
+            p.batch,
+            p.expiry_date,
+            p.manufacture_date,
+            p.pack_size,
+            p.cost_price_per_pack,
+            p.sell_price_per_pack,
+            p.location_id,
+            p.note,
+            p.reason_option_id,
+            p.comment,
+            p.store_id,
+        )
+        .await
+        {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Remove a line from a stocktake.")]
+    async fn delete_stocktake_line(
+        &self,
+        Parameters(p): Parameters<DeleteByIdParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match stocktakes::delete_stocktake_line(&self.client, p.id, p.store_id).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    // -------- Purchase orders --------
+
+    #[tool(description = "List purchase orders with optional filters by status and supplier.")]
+    async fn list_purchase_orders(
+        &self,
+        Parameters(p): Parameters<ListPurchaseOrdersParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match purchase_orders::list_purchase_orders(
+            &self.client,
+            p.status,
+            p.supplier_id,
+            p.sort_by,
+            p.desc,
+            p.first,
+            p.offset,
+            p.store_id,
+        )
+        .await
+        {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Get a specific purchase order with all lines and date fields.")]
+    async fn get_purchase_order(
+        &self,
+        Parameters(p): Parameters<GetPurchaseOrderParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match purchase_orders::get_purchase_order(&self.client, p.id, p.store_id).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Create a new draft purchase order for a supplier. Add lines with insert_purchase_order_line, then update status through NEW->CONFIRMED->SENT->FINALISED.")]
+    async fn insert_purchase_order(
+        &self,
+        Parameters(p): Parameters<InsertPurchaseOrderParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match purchase_orders::insert_purchase_order(
+            &self.client,
+            p.supplier_id,
+            p.id,
+            p.store_id,
+        )
+        .await
+        {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Update a purchase order: status, dates, charges, references, etc. Backdate-able fields: confirmedDatetime, sentDatetime (ISO datetime), contractSignedDate, advancePaidDate, receivedAtPortDate, requestedDeliveryDate (YYYY-MM-DD). Note: createdDatetime and finalisedDatetime are NOT settable.")]
+    async fn update_purchase_order(
+        &self,
+        Parameters(p): Parameters<UpdatePurchaseOrderParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match purchase_orders::update_purchase_order(
+            &self.client,
+            p.id,
+            p.status,
+            p.supplier_id,
+            p.confirmed_datetime,
+            p.sent_datetime,
+            p.contract_signed_date,
+            p.advance_paid_date,
+            p.received_at_port_date,
+            p.requested_delivery_date,
+            p.comment,
+            p.reference,
+            p.supplier_discount_percentage,
+            p.supplier_discount_amount,
+            p.currency_id,
+            p.foreign_exchange_rate,
+            p.shipping_method,
+            p.donor_id,
+            p.supplier_agent,
+            p.authorising_officer_1,
+            p.authorising_officer_2,
+            p.additional_instructions,
+            p.heading_message,
+            p.agent_commission,
+            p.document_charge,
+            p.communications_charge,
+            p.insurance_charge,
+            p.freight_charge,
+            p.freight_conditions,
+            p.store_id,
+        )
+        .await
+        {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Delete a draft purchase order.")]
+    async fn delete_purchase_order(
+        &self,
+        Parameters(p): Parameters<DeleteByIdParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match purchase_orders::delete_purchase_order(&self.client, p.id, p.store_id).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Add a line to a purchase order. Pass itemIdOrCode (item UUID or code), quantities, prices, and optional dates.")]
+    async fn insert_purchase_order_line(
+        &self,
+        Parameters(p): Parameters<InsertPurchaseOrderLineParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match purchase_orders::insert_purchase_order_line(
+            &self.client,
+            p.purchase_order_id,
+            p.item_id_or_code,
+            p.requested_pack_size,
+            p.requested_number_of_units,
+            p.requested_delivery_date,
+            p.expected_delivery_date,
+            p.price_per_pack_before_discount,
+            p.price_per_pack_after_discount,
+            p.manufacturer_id,
+            p.note,
+            p.unit,
+            p.supplier_item_code,
+            p.comment,
+            p.id,
+            p.store_id,
+        )
+        .await
+        {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Update a purchase order line (quantity, price, status NEW/SENT/CLOSED, dates).")]
+    async fn update_purchase_order_line(
+        &self,
+        Parameters(p): Parameters<UpdatePurchaseOrderLineParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match purchase_orders::update_purchase_order_line(
+            &self.client,
+            p.id,
+            p.item_id,
+            p.requested_pack_size,
+            p.requested_number_of_units,
+            p.adjusted_number_of_units,
+            p.requested_delivery_date,
+            p.expected_delivery_date,
+            p.price_per_pack_before_discount,
+            p.price_per_pack_after_discount,
+            p.manufacturer_id,
+            p.note,
+            p.unit,
+            p.supplier_item_code,
+            p.comment,
+            p.status,
+            p.store_id,
+        )
+        .await
+        {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Delete one or more purchase order lines (bulk operation, takes an array of IDs).")]
+    async fn delete_purchase_order_lines(
+        &self,
+        Parameters(p): Parameters<DeletePurchaseOrderLinesParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match purchase_orders::delete_purchase_order_lines(&self.client, p.ids, p.store_id).await {
             Ok(t) => ok(t),
             Err(e) => err(e),
         }
