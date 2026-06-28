@@ -33,6 +33,89 @@ use serde::Deserialize;
 use crate::client::OmSupplyClient;
 use crate::error::AppError;
 
+/// Lenient deserializers for scalar params.
+///
+/// Some MCP client bridges (e.g. the desktop/MCPB stdio bridge) serialize *all*
+/// tool-call arguments as JSON strings -- so `{"first": 25, "isVaccine": true}`
+/// arrives as `{"first": "25", "isVaccine": "true"}`. Our params are strictly
+/// typed, so serde would reject the string form. These helpers accept either the
+/// native JSON type or its string encoding. The advertised JSON schema is
+/// unchanged (still number/boolean), so well-behaved clients are unaffected.
+///
+/// Each optional field using one of these MUST also carry `#[serde(default)]`,
+/// because `deserialize_with` disables serde's implicit "missing Option -> None".
+mod flex {
+    use std::fmt::Display;
+    use std::str::FromStr;
+
+    use serde::{Deserialize, Deserializer, de};
+    use serde_json::Value;
+
+    fn parse_bool(s: &str) -> Result<bool, String> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "true" | "1" | "yes" | "y" => Ok(true),
+            "false" | "0" | "no" | "n" => Ok(false),
+            other => Err(format!("invalid boolean string: {other:?}")),
+        }
+    }
+
+    /// Accept a JSON bool, a stringified bool ("true"/"false"/"1"/"0"), or a number.
+    pub fn opt_bool<'de, D>(d: D) -> Result<Option<bool>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        match Option::<Value>::deserialize(d)? {
+            None | Some(Value::Null) => Ok(None),
+            Some(Value::Bool(b)) => Ok(Some(b)),
+            Some(Value::String(s)) if s.trim().is_empty() => Ok(None),
+            Some(Value::String(s)) => parse_bool(&s).map(Some).map_err(de::Error::custom),
+            Some(Value::Number(n)) => Ok(Some(n.as_f64().map(|f| f != 0.0).unwrap_or(false))),
+            Some(other) => Err(de::Error::custom(format!("expected boolean, got {other}"))),
+        }
+    }
+
+    /// Accept a JSON number or a stringified number; `null`/missing/empty -> None.
+    fn opt_num<'de, D, T>(d: D) -> Result<Option<T>, D::Error>
+    where
+        D: Deserializer<'de>,
+        T: FromStr + Deserialize<'de>,
+        <T as FromStr>::Err: Display,
+    {
+        match Option::<Value>::deserialize(d)? {
+            None | Some(Value::Null) => Ok(None),
+            Some(Value::String(s)) if s.trim().is_empty() => Ok(None),
+            Some(Value::String(s)) => s.trim().parse::<T>().map(Some).map_err(de::Error::custom),
+            Some(v) => T::deserialize(v).map(Some).map_err(de::Error::custom),
+        }
+    }
+
+    /// Accept a JSON number or a stringified number; field must be present.
+    fn req_num<'de, D, T>(d: D) -> Result<T, D::Error>
+    where
+        D: Deserializer<'de>,
+        T: FromStr + Deserialize<'de>,
+        <T as FromStr>::Err: Display,
+    {
+        match Value::deserialize(d)? {
+            Value::String(s) => s.trim().parse::<T>().map_err(de::Error::custom),
+            v => T::deserialize(v).map_err(de::Error::custom),
+        }
+    }
+
+    pub fn opt_u32<'de, D: Deserializer<'de>>(d: D) -> Result<Option<u32>, D::Error> {
+        opt_num(d)
+    }
+    pub fn opt_i32<'de, D: Deserializer<'de>>(d: D) -> Result<Option<i32>, D::Error> {
+        opt_num(d)
+    }
+    pub fn opt_f64<'de, D: Deserializer<'de>>(d: D) -> Result<Option<f64>, D::Error> {
+        opt_num(d)
+    }
+    pub fn req_f64<'de, D: Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
+        req_num(d)
+    }
+}
+
 #[derive(Clone)]
 pub struct OmSupplyServer {
     client: Arc<OmSupplyClient>,
@@ -56,8 +139,10 @@ impl OmSupplyServer {
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct ListStoresParams {
     /// Max number of results to return (default 25)
+    #[serde(default, deserialize_with = "flex::opt_u32")]
     pub first: Option<u32>,
     /// Number of results to skip for pagination
+    #[serde(default, deserialize_with = "flex::opt_u32")]
     pub offset: Option<u32>,
 }
 
@@ -77,11 +162,13 @@ pub struct SearchItemsParams {
     /// Filter by exact item code
     pub code: Option<String>,
     /// Filter to only vaccine items
-    #[serde(rename = "isVaccine")]
+    #[serde(rename = "isVaccine", default, deserialize_with = "flex::opt_bool")]
     pub is_vaccine: Option<bool>,
     /// Max results to return (default 25)
+    #[serde(default, deserialize_with = "flex::opt_u32")]
     pub first: Option<u32>,
     /// Number of results to skip for pagination
+    #[serde(default, deserialize_with = "flex::opt_u32")]
     pub offset: Option<u32>,
     /// Store ID (uses default if not provided)
     #[serde(rename = "storeId")]
@@ -116,16 +203,19 @@ pub struct GetStockLinesParams {
     #[serde(rename = "locationId")]
     pub location_id: Option<String>,
     /// If true, only show lines with available packs
-    #[serde(rename = "hasStock")]
+    #[serde(rename = "hasStock", default, deserialize_with = "flex::opt_bool")]
     pub has_stock: Option<bool>,
     /// Sort field: expiryDate | itemName | itemCode | batch | numberOfPacks (default: itemName)
     #[serde(rename = "sortBy")]
     pub sort_by: Option<String>,
     /// Sort descending
+    #[serde(default, deserialize_with = "flex::opt_bool")]
     pub desc: Option<bool>,
     /// Max results (default 25)
+    #[serde(default, deserialize_with = "flex::opt_u32")]
     pub first: Option<u32>,
     /// Pagination offset
+    #[serde(default, deserialize_with = "flex::opt_u32")]
     pub offset: Option<u32>,
     /// Store ID (uses default if not provided)
     #[serde(rename = "storeId")]
@@ -135,13 +225,13 @@ pub struct GetStockLinesParams {
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct GetStockCountsParams {
     /// Days-until-expired threshold (default 30)
-    #[serde(rename = "daysTillExpired")]
+    #[serde(rename = "daysTillExpired", default, deserialize_with = "flex::opt_i32")]
     pub days_till_expired: Option<i32>,
     /// Months-of-stock below which items are "low stock" (default 3)
-    #[serde(rename = "lowStockThreshold")]
+    #[serde(rename = "lowStockThreshold", default, deserialize_with = "flex::opt_f64")]
     pub low_stock_threshold: Option<f64>,
     /// Months-of-stock above which items are "high stock" (default 6)
-    #[serde(rename = "highStockThreshold")]
+    #[serde(rename = "highStockThreshold", default, deserialize_with = "flex::opt_f64")]
     pub high_stock_threshold: Option<f64>,
     /// Store ID (uses default if not provided)
     #[serde(rename = "storeId")]
@@ -154,8 +244,10 @@ pub struct GetItemLedgerParams {
     #[serde(rename = "itemId")]
     pub item_id: String,
     /// Max results (default 25)
+    #[serde(default, deserialize_with = "flex::opt_u32")]
     pub first: Option<u32>,
     /// Pagination offset
+    #[serde(default, deserialize_with = "flex::opt_u32")]
     pub offset: Option<u32>,
     /// Store ID (uses default if not provided)
     #[serde(rename = "storeId")]
@@ -176,10 +268,13 @@ pub struct ListInvoicesParams {
     #[serde(rename = "sortBy")]
     pub sort_by: Option<String>,
     /// Sort descending (default true)
+    #[serde(default, deserialize_with = "flex::opt_bool")]
     pub desc: Option<bool>,
     /// Max results (default 25)
+    #[serde(default, deserialize_with = "flex::opt_u32")]
     pub first: Option<u32>,
     /// Pagination offset
+    #[serde(default, deserialize_with = "flex::opt_u32")]
     pub offset: Option<u32>,
     /// Store ID (uses default if not provided)
     #[serde(rename = "storeId")]
@@ -202,14 +297,16 @@ pub struct SearchNamesParams {
     /// Filter by exact code
     pub code: Option<String>,
     /// Filter to only suppliers
-    #[serde(rename = "isSupplier")]
+    #[serde(rename = "isSupplier", default, deserialize_with = "flex::opt_bool")]
     pub is_supplier: Option<bool>,
     /// Filter to only customers
-    #[serde(rename = "isCustomer")]
+    #[serde(rename = "isCustomer", default, deserialize_with = "flex::opt_bool")]
     pub is_customer: Option<bool>,
     /// Max results (default 25)
+    #[serde(default, deserialize_with = "flex::opt_u32")]
     pub first: Option<u32>,
     /// Pagination offset
+    #[serde(default, deserialize_with = "flex::opt_u32")]
     pub offset: Option<u32>,
     /// Store ID (uses default if not provided)
     #[serde(rename = "storeId")]
@@ -221,8 +318,10 @@ pub struct GetMasterListsParams {
     /// Search term to match against master list name
     pub search: Option<String>,
     /// Max results (default 25)
+    #[serde(default, deserialize_with = "flex::opt_u32")]
     pub first: Option<u32>,
     /// Pagination offset
+    #[serde(default, deserialize_with = "flex::opt_u32")]
     pub offset: Option<u32>,
     /// Store ID (uses default if not provided)
     #[serde(rename = "storeId")]
@@ -245,16 +344,19 @@ pub struct ListRequisitionsParams {
     #[serde(rename = "programId")]
     pub program_id: Option<String>,
     /// Filter to only emergency requisitions
-    #[serde(rename = "isEmergency")]
+    #[serde(rename = "isEmergency", default, deserialize_with = "flex::opt_bool")]
     pub is_emergency: Option<bool>,
     /// Sort field: requisitionNumber | type | status | otherPartyName | sentDatetime | createdDatetime | finalisedDatetime | expectedDeliveryDate | theirReference | orderType | programName | periodStartDate | comment (default: createdDatetime)
     #[serde(rename = "sortBy")]
     pub sort_by: Option<String>,
     /// Sort descending (default true)
+    #[serde(default, deserialize_with = "flex::opt_bool")]
     pub desc: Option<bool>,
     /// Max results (default 25)
+    #[serde(default, deserialize_with = "flex::opt_u32")]
     pub first: Option<u32>,
     /// Pagination offset
+    #[serde(default, deserialize_with = "flex::opt_u32")]
     pub offset: Option<u32>,
     /// Store ID (uses default if not provided)
     #[serde(rename = "storeId")]
@@ -276,10 +378,10 @@ pub struct InsertRequestRequisitionParams {
     #[serde(rename = "otherPartyId")]
     pub other_party_id: String,
     /// Maximum months of stock to keep on hand (e.g. 6.0)
-    #[serde(rename = "maxMonthsOfStock")]
+    #[serde(rename = "maxMonthsOfStock", deserialize_with = "flex::req_f64")]
     pub max_months_of_stock: f64,
     /// Minimum months of stock threshold (e.g. 3.0)
-    #[serde(rename = "minMonthsOfStock")]
+    #[serde(rename = "minMonthsOfStock", deserialize_with = "flex::req_f64")]
     pub min_months_of_stock: f64,
     /// Their (supplier-side) reference for this requisition
     #[serde(rename = "theirReference")]
@@ -318,10 +420,10 @@ pub struct UpdateRequestRequisitionParams {
     #[serde(rename = "expectedDeliveryDate")]
     pub expected_delivery_date: Option<String>,
     /// Maximum months of stock
-    #[serde(rename = "maxMonthsOfStock")]
+    #[serde(rename = "maxMonthsOfStock", default, deserialize_with = "flex::opt_f64")]
     pub max_months_of_stock: Option<f64>,
     /// Minimum months of stock
-    #[serde(rename = "minMonthsOfStock")]
+    #[serde(rename = "minMonthsOfStock", default, deserialize_with = "flex::opt_f64")]
     pub min_months_of_stock: Option<f64>,
     /// Store ID (uses default if not provided)
     #[serde(rename = "storeId")]
@@ -346,7 +448,7 @@ pub struct InsertRequestRequisitionLineParams {
     #[serde(rename = "itemId")]
     pub item_id: String,
     /// Requested quantity (units). If provided, line is updated immediately after insert.
-    #[serde(rename = "requestedQuantity")]
+    #[serde(rename = "requestedQuantity", default, deserialize_with = "flex::opt_f64")]
     pub requested_quantity: Option<f64>,
     /// Optional comment about this line
     pub comment: Option<String>,
@@ -362,7 +464,7 @@ pub struct UpdateRequestRequisitionLineParams {
     /// The requisition line ID
     pub id: String,
     /// Requested quantity
-    #[serde(rename = "requestedQuantity")]
+    #[serde(rename = "requestedQuantity", default, deserialize_with = "flex::opt_f64")]
     pub requested_quantity: Option<f64>,
     /// Comment
     pub comment: Option<String>,
@@ -388,10 +490,13 @@ pub struct ListRnrFormsParams {
     #[serde(rename = "sortBy")]
     pub sort_by: Option<String>,
     /// Sort descending (default true)
+    #[serde(default, deserialize_with = "flex::opt_bool")]
     pub desc: Option<bool>,
     /// Max results (default 25)
+    #[serde(default, deserialize_with = "flex::opt_u32")]
     pub first: Option<u32>,
     /// Pagination offset
+    #[serde(default, deserialize_with = "flex::opt_u32")]
     pub offset: Option<u32>,
     /// Store ID (uses default if not provided)
     #[serde(rename = "storeId")]
@@ -455,11 +560,13 @@ pub struct ListProgramsParams {
     /// Search term to match against program name
     pub search: Option<String>,
     /// Filter to only immunisation programs
-    #[serde(rename = "isImmunisation")]
+    #[serde(rename = "isImmunisation", default, deserialize_with = "flex::opt_bool")]
     pub is_immunisation: Option<bool>,
     /// Max results (default 25)
+    #[serde(default, deserialize_with = "flex::opt_u32")]
     pub first: Option<u32>,
     /// Pagination offset
+    #[serde(default, deserialize_with = "flex::opt_u32")]
     pub offset: Option<u32>,
     /// Store ID (uses default if not provided)
     #[serde(rename = "storeId")]
@@ -478,8 +585,10 @@ pub struct ListPeriodsParams {
     #[serde(rename = "endDateBefore")]
     pub end_date_before: Option<String>,
     /// Max results (default 25)
+    #[serde(default, deserialize_with = "flex::opt_u32")]
     pub first: Option<u32>,
     /// Pagination offset
+    #[serde(default, deserialize_with = "flex::opt_u32")]
     pub offset: Option<u32>,
     /// Store ID (uses default if not provided)
     #[serde(rename = "storeId")]
@@ -494,7 +603,7 @@ pub struct InsertOutboundShipmentParams {
     #[serde(rename = "otherPartyId")]
     pub other_party_id: String,
     /// Place shipment on hold
-    #[serde(rename = "onHold")]
+    #[serde(rename = "onHold", default, deserialize_with = "flex::opt_bool")]
     pub on_hold: Option<bool>,
     pub comment: Option<String>,
     #[serde(rename = "theirReference")]
@@ -513,7 +622,7 @@ pub struct UpdateOutboundShipmentParams {
     pub id: String,
     /// Status transition: ALLOCATED | PICKED | SHIPPED (cannot reverse)
     pub status: Option<String>,
-    #[serde(rename = "onHold")]
+    #[serde(rename = "onHold", default, deserialize_with = "flex::opt_bool")]
     pub on_hold: Option<bool>,
     pub comment: Option<String>,
     #[serde(rename = "theirReference")]
@@ -542,9 +651,9 @@ pub struct InsertOutboundShipmentLineParams {
     #[serde(rename = "stockLineId")]
     pub stock_line_id: String,
     /// Number of packs to issue
-    #[serde(rename = "numberOfPacks")]
+    #[serde(rename = "numberOfPacks", deserialize_with = "flex::req_f64")]
     pub number_of_packs: f64,
-    #[serde(rename = "taxPercentage")]
+    #[serde(rename = "taxPercentage", default, deserialize_with = "flex::opt_f64")]
     pub tax_percentage: Option<f64>,
     #[serde(rename = "vvmStatusId")]
     pub vvm_status_id: Option<String>,
@@ -558,9 +667,9 @@ pub struct UpdateOutboundShipmentLineParams {
     pub id: String,
     #[serde(rename = "stockLineId")]
     pub stock_line_id: Option<String>,
-    #[serde(rename = "numberOfPacks")]
+    #[serde(rename = "numberOfPacks", default, deserialize_with = "flex::opt_f64")]
     pub number_of_packs: Option<f64>,
-    #[serde(rename = "prescribedQuantity")]
+    #[serde(rename = "prescribedQuantity", default, deserialize_with = "flex::opt_f64")]
     pub prescribed_quantity: Option<f64>,
     #[serde(rename = "vvmStatusId")]
     pub vvm_status_id: Option<String>,
@@ -575,7 +684,7 @@ pub struct InsertInboundShipmentParams {
     /// Supplier ID (use search_names with isSupplier=true)
     #[serde(rename = "otherPartyId")]
     pub other_party_id: String,
-    #[serde(rename = "onHold")]
+    #[serde(rename = "onHold", default, deserialize_with = "flex::opt_bool")]
     pub on_hold: Option<bool>,
     pub comment: Option<String>,
     #[serde(rename = "theirReference")]
@@ -588,7 +697,7 @@ pub struct InsertInboundShipmentParams {
     #[serde(rename = "purchaseOrderId")]
     pub purchase_order_id: Option<String>,
     /// If true and purchaseOrderId set, pre-fill lines from the PO
-    #[serde(rename = "insertLinesFromPurchaseOrder")]
+    #[serde(rename = "insertLinesFromPurchaseOrder", default, deserialize_with = "flex::opt_bool")]
     pub insert_lines_from_purchase_order: Option<bool>,
     pub id: Option<String>,
     #[serde(rename = "storeId")]
@@ -601,7 +710,7 @@ pub struct UpdateInboundShipmentParams {
     /// Status transition: SHIPPED | DELIVERED | RECEIVED | VERIFIED (cannot reverse).
     /// Only `receivedDatetime` is backdate-able; delivered/verified are server-stamped.
     pub status: Option<String>,
-    #[serde(rename = "onHold")]
+    #[serde(rename = "onHold", default, deserialize_with = "flex::opt_bool")]
     pub on_hold: Option<bool>,
     pub comment: Option<String>,
     #[serde(rename = "theirReference")]
@@ -624,14 +733,14 @@ pub struct InsertInboundShipmentLineParams {
     #[serde(rename = "itemId")]
     pub item_id: String,
     /// Pack size (units per pack)
-    #[serde(rename = "packSize")]
+    #[serde(rename = "packSize", deserialize_with = "flex::req_f64")]
     pub pack_size: f64,
     /// Number of packs being received
-    #[serde(rename = "numberOfPacks")]
+    #[serde(rename = "numberOfPacks", deserialize_with = "flex::req_f64")]
     pub number_of_packs: f64,
-    #[serde(rename = "costPricePerPack")]
+    #[serde(rename = "costPricePerPack", deserialize_with = "flex::req_f64")]
     pub cost_price_per_pack: f64,
-    #[serde(rename = "sellPricePerPack")]
+    #[serde(rename = "sellPricePerPack", deserialize_with = "flex::req_f64")]
     pub sell_price_per_pack: f64,
     pub batch: Option<String>,
     /// Expiry date (YYYY-MM-DD)
@@ -643,9 +752,9 @@ pub struct InsertInboundShipmentLineParams {
     #[serde(rename = "locationId")]
     pub location_id: Option<String>,
     pub note: Option<String>,
-    #[serde(rename = "taxPercentage")]
+    #[serde(rename = "taxPercentage", default, deserialize_with = "flex::opt_f64")]
     pub tax_percentage: Option<f64>,
-    #[serde(rename = "totalBeforeTax")]
+    #[serde(rename = "totalBeforeTax", default, deserialize_with = "flex::opt_f64")]
     pub total_before_tax: Option<f64>,
     #[serde(rename = "itemVariantId")]
     pub item_variant_id: Option<String>,
@@ -672,13 +781,13 @@ pub struct UpdateInboundShipmentLineParams {
     pub id: String,
     #[serde(rename = "itemId")]
     pub item_id: Option<String>,
-    #[serde(rename = "packSize")]
+    #[serde(rename = "packSize", default, deserialize_with = "flex::opt_f64")]
     pub pack_size: Option<f64>,
-    #[serde(rename = "numberOfPacks")]
+    #[serde(rename = "numberOfPacks", default, deserialize_with = "flex::opt_f64")]
     pub number_of_packs: Option<f64>,
-    #[serde(rename = "costPricePerPack")]
+    #[serde(rename = "costPricePerPack", default, deserialize_with = "flex::opt_f64")]
     pub cost_price_per_pack: Option<f64>,
-    #[serde(rename = "sellPricePerPack")]
+    #[serde(rename = "sellPricePerPack", default, deserialize_with = "flex::opt_f64")]
     pub sell_price_per_pack: Option<f64>,
     pub batch: Option<String>,
     #[serde(rename = "expiryDate")]
@@ -699,13 +808,13 @@ pub struct UpdateInboundShipmentLineParams {
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct InsertStocktakeParams {
     /// Create a stocktake covering all items in the store
-    #[serde(rename = "isAllItemsStocktake")]
+    #[serde(rename = "isAllItemsStocktake", default, deserialize_with = "flex::opt_bool")]
     pub is_all_items_stocktake: Option<bool>,
     /// Limit stocktake to a master list (item catalog)
     #[serde(rename = "masterListId")]
     pub master_list_id: Option<String>,
     /// Include all master list items even those with no current stock
-    #[serde(rename = "includeAllMasterListItems")]
+    #[serde(rename = "includeAllMasterListItems", default, deserialize_with = "flex::opt_bool")]
     pub include_all_master_list_items: Option<bool>,
     /// Limit stocktake to a specific storage location
     #[serde(rename = "locationId")]
@@ -716,10 +825,10 @@ pub struct InsertStocktakeParams {
     #[serde(rename = "expiresBefore")]
     pub expires_before: Option<String>,
     /// First-ever stocktake for the store (creates baseline)
-    #[serde(rename = "isInitialStocktake")]
+    #[serde(rename = "isInitialStocktake", default, deserialize_with = "flex::opt_bool")]
     pub is_initial_stocktake: Option<bool>,
     /// Create stocktake with no lines (add via insert_stocktake_line)
-    #[serde(rename = "createBlankStocktake")]
+    #[serde(rename = "createBlankStocktake", default, deserialize_with = "flex::opt_bool")]
     pub create_blank_stocktake: Option<bool>,
     pub description: Option<String>,
     pub comment: Option<String>,
@@ -740,7 +849,7 @@ pub struct UpdateStocktakeParams {
     pub stocktake_date: Option<String>,
     pub description: Option<String>,
     pub comment: Option<String>,
-    #[serde(rename = "isLocked")]
+    #[serde(rename = "isLocked", default, deserialize_with = "flex::opt_bool")]
     pub is_locked: Option<bool>,
     #[serde(rename = "countedBy")]
     pub counted_by: Option<String>,
@@ -760,18 +869,18 @@ pub struct InsertStocktakeLineParams {
     #[serde(rename = "itemId")]
     pub item_id: Option<String>,
     /// Counted physical packs
-    #[serde(rename = "countedNumberOfPacks")]
+    #[serde(rename = "countedNumberOfPacks", default, deserialize_with = "flex::opt_f64")]
     pub counted_number_of_packs: Option<f64>,
     pub batch: Option<String>,
     #[serde(rename = "expiryDate")]
     pub expiry_date: Option<String>,
     #[serde(rename = "manufactureDate")]
     pub manufacture_date: Option<String>,
-    #[serde(rename = "packSize")]
+    #[serde(rename = "packSize", default, deserialize_with = "flex::opt_f64")]
     pub pack_size: Option<f64>,
-    #[serde(rename = "costPricePerPack")]
+    #[serde(rename = "costPricePerPack", default, deserialize_with = "flex::opt_f64")]
     pub cost_price_per_pack: Option<f64>,
-    #[serde(rename = "sellPricePerPack")]
+    #[serde(rename = "sellPricePerPack", default, deserialize_with = "flex::opt_f64")]
     pub sell_price_per_pack: Option<f64>,
     #[serde(rename = "locationId")]
     pub location_id: Option<String>,
@@ -799,20 +908,20 @@ pub struct InsertStocktakeLineParams {
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct UpdateStocktakeLineParams {
     pub id: String,
-    #[serde(rename = "countedNumberOfPacks")]
+    #[serde(rename = "countedNumberOfPacks", default, deserialize_with = "flex::opt_f64")]
     pub counted_number_of_packs: Option<f64>,
-    #[serde(rename = "snapshotNumberOfPacks")]
+    #[serde(rename = "snapshotNumberOfPacks", default, deserialize_with = "flex::opt_f64")]
     pub snapshot_number_of_packs: Option<f64>,
     pub batch: Option<String>,
     #[serde(rename = "expiryDate")]
     pub expiry_date: Option<String>,
     #[serde(rename = "manufactureDate")]
     pub manufacture_date: Option<String>,
-    #[serde(rename = "packSize")]
+    #[serde(rename = "packSize", default, deserialize_with = "flex::opt_f64")]
     pub pack_size: Option<f64>,
-    #[serde(rename = "costPricePerPack")]
+    #[serde(rename = "costPricePerPack", default, deserialize_with = "flex::opt_f64")]
     pub cost_price_per_pack: Option<f64>,
-    #[serde(rename = "sellPricePerPack")]
+    #[serde(rename = "sellPricePerPack", default, deserialize_with = "flex::opt_f64")]
     pub sell_price_per_pack: Option<f64>,
     #[serde(rename = "locationId")]
     pub location_id: Option<String>,
@@ -835,8 +944,11 @@ pub struct ListPurchaseOrdersParams {
     /// Sort by createdDatetime | number | status | supplier | sentDatetime (default createdDatetime)
     #[serde(rename = "sortBy")]
     pub sort_by: Option<String>,
+    #[serde(default, deserialize_with = "flex::opt_bool")]
     pub desc: Option<bool>,
+    #[serde(default, deserialize_with = "flex::opt_u32")]
     pub first: Option<u32>,
+    #[serde(default, deserialize_with = "flex::opt_u32")]
     pub offset: Option<u32>,
     #[serde(rename = "storeId")]
     pub store_id: Option<String>,
@@ -886,13 +998,13 @@ pub struct UpdatePurchaseOrderParams {
     pub requested_delivery_date: Option<String>,
     pub comment: Option<String>,
     pub reference: Option<String>,
-    #[serde(rename = "supplierDiscountPercentage")]
+    #[serde(rename = "supplierDiscountPercentage", default, deserialize_with = "flex::opt_f64")]
     pub supplier_discount_percentage: Option<f64>,
-    #[serde(rename = "supplierDiscountAmount")]
+    #[serde(rename = "supplierDiscountAmount", default, deserialize_with = "flex::opt_f64")]
     pub supplier_discount_amount: Option<f64>,
     #[serde(rename = "currencyId")]
     pub currency_id: Option<String>,
-    #[serde(rename = "foreignExchangeRate")]
+    #[serde(rename = "foreignExchangeRate", default, deserialize_with = "flex::opt_f64")]
     pub foreign_exchange_rate: Option<f64>,
     #[serde(rename = "shippingMethod")]
     pub shipping_method: Option<String>,
@@ -908,15 +1020,15 @@ pub struct UpdatePurchaseOrderParams {
     pub additional_instructions: Option<String>,
     #[serde(rename = "headingMessage")]
     pub heading_message: Option<String>,
-    #[serde(rename = "agentCommission")]
+    #[serde(rename = "agentCommission", default, deserialize_with = "flex::opt_f64")]
     pub agent_commission: Option<f64>,
-    #[serde(rename = "documentCharge")]
+    #[serde(rename = "documentCharge", default, deserialize_with = "flex::opt_f64")]
     pub document_charge: Option<f64>,
-    #[serde(rename = "communicationsCharge")]
+    #[serde(rename = "communicationsCharge", default, deserialize_with = "flex::opt_f64")]
     pub communications_charge: Option<f64>,
-    #[serde(rename = "insuranceCharge")]
+    #[serde(rename = "insuranceCharge", default, deserialize_with = "flex::opt_f64")]
     pub insurance_charge: Option<f64>,
-    #[serde(rename = "freightCharge")]
+    #[serde(rename = "freightCharge", default, deserialize_with = "flex::opt_f64")]
     pub freight_charge: Option<f64>,
     #[serde(rename = "freightConditions")]
     pub freight_conditions: Option<String>,
@@ -931,9 +1043,9 @@ pub struct InsertPurchaseOrderLineParams {
     /// Either the item ID (UUID) or the item code (e.g. "AMOX250")
     #[serde(rename = "itemIdOrCode")]
     pub item_id_or_code: String,
-    #[serde(rename = "requestedPackSize")]
+    #[serde(rename = "requestedPackSize", default, deserialize_with = "flex::opt_f64")]
     pub requested_pack_size: Option<f64>,
-    #[serde(rename = "requestedNumberOfUnits")]
+    #[serde(rename = "requestedNumberOfUnits", default, deserialize_with = "flex::opt_f64")]
     pub requested_number_of_units: Option<f64>,
     /// Date YYYY-MM-DD
     #[serde(rename = "requestedDeliveryDate")]
@@ -941,9 +1053,9 @@ pub struct InsertPurchaseOrderLineParams {
     /// Date YYYY-MM-DD
     #[serde(rename = "expectedDeliveryDate")]
     pub expected_delivery_date: Option<String>,
-    #[serde(rename = "pricePerPackBeforeDiscount")]
+    #[serde(rename = "pricePerPackBeforeDiscount", default, deserialize_with = "flex::opt_f64")]
     pub price_per_pack_before_discount: Option<f64>,
-    #[serde(rename = "pricePerPackAfterDiscount")]
+    #[serde(rename = "pricePerPackAfterDiscount", default, deserialize_with = "flex::opt_f64")]
     pub price_per_pack_after_discount: Option<f64>,
     #[serde(rename = "manufacturerId")]
     pub manufacturer_id: Option<String>,
@@ -962,20 +1074,20 @@ pub struct UpdatePurchaseOrderLineParams {
     pub id: String,
     #[serde(rename = "itemId")]
     pub item_id: Option<String>,
-    #[serde(rename = "requestedPackSize")]
+    #[serde(rename = "requestedPackSize", default, deserialize_with = "flex::opt_f64")]
     pub requested_pack_size: Option<f64>,
-    #[serde(rename = "requestedNumberOfUnits")]
+    #[serde(rename = "requestedNumberOfUnits", default, deserialize_with = "flex::opt_f64")]
     pub requested_number_of_units: Option<f64>,
     /// Requires AuthorisePurchaseOrder permission
-    #[serde(rename = "adjustedNumberOfUnits")]
+    #[serde(rename = "adjustedNumberOfUnits", default, deserialize_with = "flex::opt_f64")]
     pub adjusted_number_of_units: Option<f64>,
     #[serde(rename = "requestedDeliveryDate")]
     pub requested_delivery_date: Option<String>,
     #[serde(rename = "expectedDeliveryDate")]
     pub expected_delivery_date: Option<String>,
-    #[serde(rename = "pricePerPackBeforeDiscount")]
+    #[serde(rename = "pricePerPackBeforeDiscount", default, deserialize_with = "flex::opt_f64")]
     pub price_per_pack_before_discount: Option<f64>,
-    #[serde(rename = "pricePerPackAfterDiscount")]
+    #[serde(rename = "pricePerPackAfterDiscount", default, deserialize_with = "flex::opt_f64")]
     pub price_per_pack_after_discount: Option<f64>,
     #[serde(rename = "manufacturerId")]
     pub manufacturer_id: Option<String>,
@@ -2137,5 +2249,52 @@ impl ServerHandler for OmSupplyServer {
             "Query Open mSupply inventory, stock, shipments, invoices, and dashboard data.".into(),
         );
         info
+    }
+}
+
+#[cfg(test)]
+mod flex_tests {
+    use super::*;
+
+    #[test]
+    fn stringified_scalars_deserialize() {
+        // Simulates a bridge that sends every arg as a JSON string.
+        let json = serde_json::json!({
+            "search": "amox",
+            "isVaccine": "true",
+            "first": "25",
+            "offset": "0"
+        });
+        let p: SearchItemsParams = serde_json::from_value(json).unwrap();
+        assert_eq!(p.is_vaccine, Some(true));
+        assert_eq!(p.first, Some(25));
+        assert_eq!(p.offset, Some(0));
+    }
+
+    #[test]
+    fn native_scalars_still_deserialize() {
+        let json = serde_json::json!({ "isVaccine": false, "first": 10 });
+        let p: SearchItemsParams = serde_json::from_value(json).unwrap();
+        assert_eq!(p.is_vaccine, Some(false));
+        assert_eq!(p.first, Some(10));
+    }
+
+    #[test]
+    fn missing_optionals_are_none() {
+        let p: SearchItemsParams = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert_eq!(p.is_vaccine, None);
+        assert_eq!(p.first, None);
+    }
+
+    #[test]
+    fn required_f64_accepts_string() {
+        let json = serde_json::json!({
+            "otherPartyId": "abc",
+            "maxMonthsOfStock": "6.0",
+            "minMonthsOfStock": "3"
+        });
+        let p: InsertRequestRequisitionParams = serde_json::from_value(json).unwrap();
+        assert_eq!(p.max_months_of_stock, 6.0);
+        assert_eq!(p.min_months_of_stock, 3.0);
     }
 }

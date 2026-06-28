@@ -15,6 +15,33 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 BIN="omsupply-mcp-server"
+
+# Version is sourced from Cargo.toml (single source of truth). We stamp it into
+# manifest.json so the packed MCPB always matches the crate version, and embed it
+# in the output filename. Bump the version in one place: Cargo.toml.
+VERSION="$(grep -m1 '^version[[:space:]]*=' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+if [ -z "${VERSION}" ]; then
+  echo "ERROR: could not read version from Cargo.toml" >&2
+  exit 1
+fi
+echo "==> Version ${VERSION} (from Cargo.toml)"
+
+# Sync the version into manifest.json (rewrites the "version" field in place).
+python3 - "$VERSION" <<'PY'
+import json, sys
+version = sys.argv[1]
+with open("manifest.json") as f:
+    manifest = json.load(f)
+if manifest.get("version") != version:
+    manifest["version"] = version
+    with open("manifest.json", "w") as f:
+        json.dump(manifest, f, indent=2)
+        f.write("\n")
+    print(f"    manifest.json version -> {version}")
+else:
+    print("    manifest.json already in sync")
+PY
+
 rm -rf bin
 mkdir -p bin
 
@@ -62,5 +89,8 @@ if build_target x86_64-pc-windows-msvc; then
 fi
 
 echo "==> Packing MCPB"
-mcpb pack . open-msupply.MCPB
-echo "Done: open-msupply.MCPB"
+OUT="open-msupply-${VERSION}.MCPB"
+mcpb pack . "$OUT"
+# Also refresh the unversioned "latest" bundle for a stable reference path.
+cp "$OUT" open-msupply.MCPB
+echo "Done: ${OUT} (also copied to open-msupply.MCPB)"
