@@ -240,6 +240,18 @@
       "description": "Remove an outbound shipment line."
     },
     {
+      "name": "create_requisition_shipment",
+      "description": "Fulfil a response requisition by creating an outbound shipment linked to it (updates the requisition's supply status)."
+    },
+    {
+      "name": "allocate_outbound_shipment_line",
+      "description": "FEFO-allocate an unallocated outbound-shipment line to stock, skipping expired/on-hold/unusable-VVM stock."
+    },
+    {
+      "name": "fulfil_requisition",
+      "description": "One-shot: create a linked shipment for a response requisition, allocate every line, and optionally ship."
+    },
+    {
       "name": "insert_inbound_shipment",
       "description": "Create a draft inbound shipment (goods receipt) from a supplier."
     },
