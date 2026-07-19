@@ -6,6 +6,7 @@
 //! 3. converts `Result<String, AppError>` into the MCP `CallToolResult` envelope.
 
 mod dashboard;
+mod fulfil;
 mod inbound_shipments;
 mod invoices;
 mod items;
@@ -673,6 +674,41 @@ pub struct UpdateOutboundShipmentLineParams {
     pub prescribed_quantity: Option<f64>,
     #[serde(rename = "vvmStatusId")]
     pub vvm_status_id: Option<String>,
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+// -------- Requisition fulfilment params --------
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct CreateRequisitionShipmentParams {
+    /// The response requisition ID to fulfil (use list_requisitions/get_requisition, type RESPONSE)
+    #[serde(rename = "responseRequisitionId")]
+    pub response_requisition_id: String,
+    /// Supplying store ID (uses default if not provided). Must own the requisition.
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct AllocateOutboundShipmentLineParams {
+    /// The unallocated outbound-shipment line ID to allocate to stock
+    #[serde(rename = "lineId")]
+    pub line_id: String,
+    /// Store ID (uses default if not provided)
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct FulfilRequisitionParams {
+    /// The response requisition ID to fulfil (type RESPONSE)
+    #[serde(rename = "responseRequisitionId")]
+    pub response_requisition_id: String,
+    /// If true, advance the created shipment to SHIPPED after allocating all lines (default false)
+    #[serde(default, deserialize_with = "flex::opt_bool")]
+    pub ship: Option<bool>,
+    /// Supplying store ID (uses default if not provided). Must own the requisition.
     #[serde(rename = "storeId")]
     pub store_id: Option<String>,
 }
@@ -1770,6 +1806,54 @@ impl OmSupplyServer {
     ) -> Result<CallToolResult, McpError> {
         match outbound_shipments::delete_outbound_shipment_line(&self.client, p.id, p.store_id)
             .await
+        {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    // -------- Requisition fulfilment --------
+
+    #[tool(description = "Fulfil a customer/response requisition by creating an outbound shipment LINKED to it (supplies the remaining-to-supply quantity of each line). Unlike insert_outbound_shipment, this link updates the requisition's supply status. Use list_requisitions/get_requisition (type RESPONSE) to find the id. Run in the supplying store's context. Creates placeholder lines — follow with allocate_outbound_shipment_line (or use fulfil_requisition to do it all at once).")]
+    async fn create_requisition_shipment(
+        &self,
+        Parameters(p): Parameters<CreateRequisitionShipmentParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match fulfil::create_requisition_shipment(
+            &self.client,
+            p.response_requisition_id,
+            p.store_id,
+        )
+        .await
+        {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Allocate an unallocated outbound-shipment line to available stock using FEFO, automatically skipping expired, on-hold-location and unusable-VVM stock. Reports counts of what was allocated and what was skipped so you know if a line couldn't be fully covered. Needed before a shipment with placeholder lines can advance to SHIPPED.")]
+    async fn allocate_outbound_shipment_line(
+        &self,
+        Parameters(p): Parameters<AllocateOutboundShipmentLineParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match fulfil::allocate_outbound_shipment_line(&self.client, p.line_id, p.store_id).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "One-shot fulfil of a response requisition: creates a linked outbound shipment, FEFO-allocates every created line to stock, and (if ship=true) advances it to SHIPPED. Returns the shipment summary plus a per-line allocation report, flagging any line left short because stock was skipped or insufficient. Convenience wrapper over create_requisition_shipment + allocate_outbound_shipment_line.")]
+    async fn fulfil_requisition(
+        &self,
+        Parameters(p): Parameters<FulfilRequisitionParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match fulfil::fulfil_requisition(
+            &self.client,
+            p.response_requisition_id,
+            p.ship.unwrap_or(false),
+            p.store_id,
+        )
+        .await
         {
             Ok(t) => ok(t),
             Err(e) => err(e),
