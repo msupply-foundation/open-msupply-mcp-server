@@ -1,18 +1,20 @@
 name: Release MCPB
 
 # Cross-builds the native binary for every supported platform, packs them into a
-# single multi-platform MCPB bundle, and attaches it to the GitHub Release.
+# single multi-platform MCPB bundle, and publishes it as a GitHub Release.
 #
 # - macOS binary is a universal (arm64 + x86_64) fat binary via `lipo`.
 # - Linux and Windows ship x86_64 (MCPB has no arch-level dispatch, so one binary
 #   per OS; x64 is the redistribution convention — see scripts/build-mcpb.sh).
 #
-# Runs when a Release is published; also runnable on demand via workflow_dispatch
-# (which just uploads the bundle as a workflow artifact, no release upload).
+# Push a `v*.*.*` tag (e.g. v0.3.0) to build and publish that release — the
+# workflow creates the GitHub Release and attaches the bundle. The tag must match
+# the version in Cargo.toml. Also runnable on demand via workflow_dispatch, which
+# just uploads the bundle as a workflow artifact (no release).
 
 on:
-  release:
-    types: [published]
+  push:
+    tags: ['v*.*.*']
   workflow_dispatch:
 
 permissions:
@@ -107,6 +109,12 @@ jobs:
         run: |
           VERSION="$(grep -m1 '^version[[:space:]]*=' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
           if [ -z "$VERSION" ]; then echo "could not read version from Cargo.toml" >&2; exit 1; fi
+          # On a tag push, the tag must match the crate version so the bundle
+          # name and release tag can never drift apart.
+          if [ "${{ github.ref_type }}" = "tag" ] && [ "${{ github.ref_name }}" != "v${VERSION}" ]; then
+            echo "tag ${{ github.ref_name }} does not match Cargo.toml version v${VERSION}" >&2
+            exit 1
+          fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           python3 - "$VERSION" <<'PY'
           import json, sys
@@ -139,8 +147,11 @@ jobs:
           path: ${{ env.BUNDLE }}
           if-no-files-found: error
 
-      - name: Attach bundle to release
-        if: github.event_name == 'release'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ github.event.release.tag_name }}" "$BUNDLE" --clobber
+      # Creates the GitHub Release for the tag (if absent) and attaches the
+      # bundle. Skipped for workflow_dispatch runs, which have no tag.
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.BUNDLE }}
+          fail_on_unmatched_files: true
