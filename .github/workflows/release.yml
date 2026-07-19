@@ -43,7 +43,7 @@ jobs:
           - platform: win32
             os: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # rustup is preinstalled on GitHub-hosted runners; the org Actions policy
       # disallows third-party toolchain actions, so set it up directly.
@@ -84,7 +84,7 @@ jobs:
           cp "target/x86_64-pc-windows-msvc/release/$BIN.exe" "dist/$BIN.exe"
 
       - name: Upload platform binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: bin-${{ matrix.platform }}
           path: dist/
@@ -95,10 +95,10 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Download platform binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           pattern: bin-*
           path: ${{ runner.temp }}/staging
@@ -142,7 +142,7 @@ jobs:
               f.write("\n")
           PY
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
 
@@ -156,7 +156,7 @@ jobs:
           echo "BUNDLE=$OUT" >> "$GITHUB_ENV"
 
       - name: Upload workflow artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: open-msupply-mcpb
           path: ${{ env.BUNDLE }}
