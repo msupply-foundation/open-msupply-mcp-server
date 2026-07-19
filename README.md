@@ -49,7 +49,17 @@ npm i -g @anthropic-ai/mcpb
 
 The script cross-compiles each supported target (skipping any whose rustup
 target or linker is unavailable on the current host) and packs the result into
-`open-msupply.MCPB`.
+`open-msupply.MCPB`. It only produces binaries for platforms the current host
+can build, so a single machine rarely yields a complete multi-platform bundle.
+
+### Automated releases
+
+Publishing a GitHub Release triggers `.github/workflows/release.yml`, which
+builds each platform's binary on its native runner (macOS universal via `lipo`,
+Linux x64, Windows x64), packs them into one multi-platform
+`open-msupply-<version>.MCPB`, and attaches it to the Release. The workflow can
+also be run manually (`workflow_dispatch`) to produce the bundle as a workflow
+artifact without publishing.
 
 Supported targets:
 
