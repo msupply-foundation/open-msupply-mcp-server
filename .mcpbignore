@@ -3,6 +3,7 @@ target/
 Cargo.toml
 Cargo.lock
 scripts/
+.github/
 .git/
 .gitignore
 .gitattributes
