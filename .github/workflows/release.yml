@@ -16,6 +16,11 @@ on:
   push:
     tags: ['v*.*.*']
   workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish a GitHub Release for the current Cargo.toml version (tag vX.Y.Z at the dispatched ref). Leave unchecked to only build the bundle artifact.'
+        type: boolean
+        default: false
 
 permissions:
   contents: write # required to upload the bundle as a release asset
@@ -116,6 +121,13 @@ jobs:
             exit 1
           fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          # The release tag: the pushed tag, or vX.Y.Z derived from Cargo.toml
+          # for a dispatch-driven publish.
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "RELEASE_TAG=${{ github.ref_name }}" >> "$GITHUB_ENV"
+          else
+            echo "RELEASE_TAG=v${VERSION}" >> "$GITHUB_ENV"
+          fi
           python3 - "$VERSION" <<'PY'
           import json, sys
           version = sys.argv[1]
@@ -147,11 +159,15 @@ jobs:
           path: ${{ env.BUNDLE }}
           if-no-files-found: error
 
-      # Creates the GitHub Release for the tag (if absent) and attaches the
-      # bundle. Skipped for workflow_dispatch runs, which have no tag.
+      # Publishes the GitHub Release: on a tag push, or on a dispatch with
+      # publish=true. action-gh-release creates the tag (at the checked-out
+      # commit) and the release if they don't yet exist, then attaches the
+      # bundle. A plain dispatch (publish=false) stops after the artifact above.
       - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.publish)
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: ${{ env.RELEASE_TAG }}
           files: ${{ env.BUNDLE }}
           fail_on_unmatched_files: true
