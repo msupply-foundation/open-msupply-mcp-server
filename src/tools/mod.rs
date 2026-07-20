@@ -681,6 +681,16 @@ pub struct UpdateOutboundShipmentLineParams {
 // -------- Requisition fulfilment params --------
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SupplyRequestedQuantityParams {
+    /// The response requisition ID to supply (type RESPONSE)
+    #[serde(rename = "responseRequisitionId")]
+    pub response_requisition_id: String,
+    /// Supplying store ID (uses default if not provided). Must own the requisition.
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct CreateRequisitionShipmentParams {
     /// The response requisition ID to fulfil (use list_requisitions/get_requisition, type RESPONSE)
     #[serde(rename = "responseRequisitionId")]
@@ -1814,7 +1824,24 @@ impl OmSupplyServer {
 
     // -------- Requisition fulfilment --------
 
-    #[tool(description = "Fulfil a customer/response requisition by creating an outbound shipment LINKED to it (supplies the remaining-to-supply quantity of each line). Unlike insert_outbound_shipment, this link updates the requisition's supply status. Use list_requisitions/get_requisition (type RESPONSE) to find the id. Run in the supplying store's context. Creates placeholder lines — follow with allocate_outbound_shipment_line (or use fulfil_requisition to do it all at once).")]
+    #[tool(description = "Commit to supply the full requested quantity on every line of a response requisition (sets supply_quantity = requested_quantity). REQUIRED once before create_requisition_shipment / fulfil_requisition on a freshly sent requisition — otherwise they report 'nothing to supply' because supply_quantity starts at 0. Mirrors the desktop 'Supply requested quantity' button. Run in the supplying store's context. (fulfil_requisition already does this step for you.)")]
+    async fn supply_requested_quantity(
+        &self,
+        Parameters(p): Parameters<SupplyRequestedQuantityParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match fulfil::supply_requested_quantity(
+            &self.client,
+            p.response_requisition_id,
+            p.store_id,
+        )
+        .await
+        {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Fulfil a customer/response requisition by creating an outbound shipment LINKED to it (supplies the remaining-to-supply quantity of each line). Unlike insert_outbound_shipment, this link updates the requisition's supply status. Use list_requisitions/get_requisition (type RESPONSE) to find the id. Run in the supplying store's context. PREREQUISITE: call supply_requested_quantity first on a freshly sent requisition, or this reports 'nothing to supply'. Creates placeholder lines — follow with allocate_outbound_shipment_line (or use fulfil_requisition to do it all at once, which handles the supply step too).")]
     async fn create_requisition_shipment(
         &self,
         Parameters(p): Parameters<CreateRequisitionShipmentParams>,
@@ -1842,7 +1869,7 @@ impl OmSupplyServer {
         }
     }
 
-    #[tool(description = "One-shot fulfil of a response requisition: creates a linked outbound shipment, FEFO-allocates every created line to stock, and (if ship=true) advances it to SHIPPED. Returns the shipment summary plus a per-line allocation report, flagging any line left short because stock was skipped or insufficient. Convenience wrapper over create_requisition_shipment + allocate_outbound_shipment_line.")]
+    #[tool(description = "One-shot fulfil of a response requisition: supplies the requested quantity on every line, creates a linked outbound shipment, FEFO-allocates every created line to stock, and (if ship=true) advances it to SHIPPED. Returns the shipment summary plus a per-line allocation report, flagging any line left short because stock was skipped or insufficient. Convenience wrapper over supply_requested_quantity + create_requisition_shipment + allocate_outbound_shipment_line.")]
     async fn fulfil_requisition(
         &self,
         Parameters(p): Parameters<FulfilRequisitionParams>,
