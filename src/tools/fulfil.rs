@@ -9,12 +9,31 @@
 //! "fulfil this order" path can run through the MCP.
 //!
 //! Full fulfil path:
-//!   create_requisition_shipment -> allocate each created line -> ship.
-//! `fulfil_requisition` chains all three in one call.
+//!   supply_requested_quantity -> create_requisition_shipment ->
+//!   allocate each created line -> ship.
+//! `fulfil_requisition` chains all of these in one call. The supply step is the
+//! easily-missed prerequisite: a freshly sent response requisition has
+//! supply_quantity = 0 on every line, so create_requisition_shipment would
+//! otherwise report "nothing to supply".
 
 use crate::client::OmSupplyClient;
 use crate::error::AppError;
 use serde_json::{Value, json};
+
+const SUPPLY_REQUESTED_QUANTITY_MUTATION: &str = r#"
+  mutation supplyRequestedQuantity(
+    $storeId: String
+    $input: SupplyRequestedQuantityInput!
+  ) {
+    supplyRequestedQuantity(storeId: $storeId, input: $input) {
+      __typename
+      ... on RequisitionLineConnector { totalCount }
+      ... on SupplyRequestedQuantityError {
+        error { __typename description }
+      }
+    }
+  }
+"#;
 
 const CREATE_REQUISITION_SHIPMENT_MUTATION: &str = r#"
   mutation createRequisitionShipment(
@@ -93,6 +112,57 @@ fn map_create_error(response: &Value) -> AppError {
         _ => desc.to_string(),
     };
     AppError::Graphql(msg)
+}
+
+/// Commit supply_quantity = requested_quantity on every line of a response
+/// requisition. Returns the number of updated lines.
+async fn do_supply_requested_quantity(
+    client: &OmSupplyClient,
+    response_requisition_id: String,
+    store_id: String,
+) -> Result<i64, AppError> {
+    let data: Value = client
+        .query(
+            SUPPLY_REQUESTED_QUANTITY_MUTATION,
+            json!({
+                "storeId": store_id,
+                "input": { "responseRequisitionId": response_requisition_id },
+            }),
+        )
+        .await?;
+
+    let response = data
+        .get("supplyRequestedQuantity")
+        .ok_or_else(|| AppError::UnexpectedResponse("missing supplyRequestedQuantity".into()))?;
+
+    let typename = response
+        .get("__typename")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if typename == "RequisitionLineConnector" {
+        return Ok(response
+            .get("totalCount")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0));
+    }
+
+    let err_typename = response
+        .pointer("/error/__typename")
+        .and_then(|v| v.as_str())
+        .unwrap_or(typename);
+    let desc = response
+        .pointer("/error/description")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown error");
+    let msg = match err_typename {
+        "RecordNotFound" => "Requisition not found".to_string(),
+        "CannotEditRequisition" => {
+            "Requisition is not editable (already finalised, or supplier store disabled)".to_string()
+        }
+        // NotThisStoreRequisition / anything else: surface the description.
+        _ => desc.to_string(),
+    };
+    Err(AppError::Graphql(msg))
 }
 
 /// Run the linked-shipment mutation, returning the created `InvoiceNode`.
@@ -234,6 +304,22 @@ fn format_shipment_summary(node: &Value) -> String {
     )
 }
 
+// -------- Tool D (prerequisite) --------
+
+pub async fn supply_requested_quantity(
+    client: &OmSupplyClient,
+    response_requisition_id: String,
+    store_id: Option<String>,
+) -> Result<String, AppError> {
+    let resolved_store_id = client.require_store_id(store_id).await?;
+    let count =
+        do_supply_requested_quantity(client, response_requisition_id, resolved_store_id).await?;
+    Ok(format!(
+        "Committed to supply the requested quantity on {count} line(s). \
+         The requisition is now ready for create_requisition_shipment / fulfil_requisition."
+    ))
+}
+
 // -------- Tool A --------
 
 pub async fn create_requisition_shipment(
@@ -275,7 +361,18 @@ pub async fn fulfil_requisition(
 ) -> Result<String, AppError> {
     let resolved_store_id = client.require_store_id(store_id).await?;
 
-    // 1. Create the linked shipment.
+    // 1. Commit supply_quantity = requested_quantity on every line. On a freshly
+    // sent requisition supply_quantity is 0, so without this the create step
+    // reports "nothing to supply". Mirrors the desktop "Supply requested
+    // quantity" button.
+    let supplied = do_supply_requested_quantity(
+        client,
+        response_requisition_id.clone(),
+        resolved_store_id.clone(),
+    )
+    .await?;
+
+    // 2. Create the linked shipment.
     let shipment =
         do_create_requisition_shipment(client, response_requisition_id, resolved_store_id.clone())
             .await?;
@@ -286,6 +383,8 @@ pub async fn fulfil_requisition(
         .to_string();
 
     let mut out = vec![
+        format!("Supplied requested quantity on {supplied} line(s)."),
+        String::new(),
         "Requisition shipment created:".to_string(),
         format_shipment_summary(&shipment),
         String::new(),
