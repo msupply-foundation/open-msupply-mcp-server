@@ -116,6 +116,84 @@ const DELETE_LINE_MUTATION: &str = r#"
   }
 "#;
 
+// -------- External (purchase-order-linked) inbound variants --------
+//
+// A PO-linked inbound is a normal InboundShipment with `purchaseOrderId` set,
+// but the server routes it through a parallel `*External` mutation family with
+// distinct permissions (MutateInboundShipmentExternal / VerifyInboundShipmentExternal).
+// The plain mutations reject it with "Bad user input". These reuse the exact
+// same Input and response-union types as their non-external counterparts.
+
+const UPDATE_EXTERNAL_MUTATION: &str = r#"
+  mutation updateInboundShipmentExternal(
+    $storeId: String!
+    $input: UpdateInboundShipmentInput!
+  ) {
+    updateInboundShipmentExternal(storeId: $storeId, input: $input) {
+      __typename
+      ... on InvoiceNode {
+        id invoiceNumber status otherPartyName
+        createdDatetime shippedDatetime deliveredDatetime receivedDatetime verifiedDatetime
+        comment theirReference
+      }
+      ... on UpdateInboundShipmentError {
+        error { __typename description }
+      }
+    }
+  }
+"#;
+
+const INSERT_EXTERNAL_LINE_MUTATION: &str = r#"
+  mutation insertInboundShipmentExternalLine(
+    $storeId: String!
+    $input: InsertInboundShipmentLineInput!
+  ) {
+    insertInboundShipmentExternalLine(storeId: $storeId, input: $input) {
+      __typename
+      ... on InvoiceLineNode {
+        id itemName itemCode batch numberOfPacks packSize
+        sellPricePerPack costPricePerPack expiryDate
+      }
+      ... on InsertInboundShipmentLineError {
+        error { __typename description }
+      }
+    }
+  }
+"#;
+
+const UPDATE_EXTERNAL_LINE_MUTATION: &str = r#"
+  mutation updateInboundShipmentExternalLine(
+    $storeId: String!
+    $input: UpdateInboundShipmentLineInput!
+  ) {
+    updateInboundShipmentExternalLine(storeId: $storeId, input: $input) {
+      __typename
+      ... on InvoiceLineNode {
+        id itemName itemCode batch numberOfPacks packSize
+        sellPricePerPack costPricePerPack expiryDate
+      }
+      ... on UpdateInboundShipmentLineError {
+        error { __typename description }
+      }
+    }
+  }
+"#;
+
+const DELETE_EXTERNAL_LINE_MUTATION: &str = r#"
+  mutation deleteInboundShipmentExternalLine(
+    $storeId: String!
+    $input: DeleteInboundShipmentLineInput!
+  ) {
+    deleteInboundShipmentExternalLine(storeId: $storeId, input: $input) {
+      __typename
+      ... on DeleteResponse { id }
+      ... on DeleteInboundShipmentLineError {
+        error { __typename description }
+      }
+    }
+  }
+"#;
+
 fn unwrap_mutation_response(
     response: &Value,
     success_typename: &str,
@@ -206,6 +284,7 @@ pub async fn update_inbound_shipment(
     colour: Option<String>,
     other_party_id: Option<String>,
     received_datetime: Option<String>,
+    external: bool,
     store_id: Option<String>,
 ) -> Result<String, AppError> {
     let resolved_store_id = client.require_store_id(store_id).await?;
@@ -233,16 +312,19 @@ pub async fn update_inbound_shipment(
         input["receivedDatetime"] = json!(v);
     }
 
+    let (mutation, field) = if external {
+        (UPDATE_EXTERNAL_MUTATION, "updateInboundShipmentExternal")
+    } else {
+        (UPDATE_MUTATION, "updateInboundShipment")
+    };
+
     let data: Value = client
-        .query(
-            UPDATE_MUTATION,
-            json!({ "storeId": resolved_store_id, "input": input }),
-        )
+        .query(mutation, json!({ "storeId": resolved_store_id, "input": input }))
         .await?;
 
     let response = data
-        .get("updateInboundShipment")
-        .ok_or_else(|| AppError::UnexpectedResponse("missing updateInboundShipment".into()))?;
+        .get(field)
+        .ok_or_else(|| AppError::UnexpectedResponse(format!("missing {field}")))?;
     let node = unwrap_mutation_response(response, "InvoiceNode")?;
     Ok(format!(
         "Inbound shipment updated:\n{}",
@@ -294,6 +376,7 @@ pub async fn insert_inbound_shipment_line(
     campaign_id: Option<String>,
     program_id: Option<String>,
     purchase_order_line_id: Option<String>,
+    external: bool,
     id: Option<String>,
     store_id: Option<String>,
 ) -> Result<String, AppError> {
@@ -352,16 +435,19 @@ pub async fn insert_inbound_shipment_line(
         input["purchaseOrderLineId"] = json!(v);
     }
 
+    let (mutation, field) = if external {
+        (INSERT_EXTERNAL_LINE_MUTATION, "insertInboundShipmentExternalLine")
+    } else {
+        (INSERT_LINE_MUTATION, "insertInboundShipmentLine")
+    };
+
     let data: Value = client
-        .query(
-            INSERT_LINE_MUTATION,
-            json!({ "storeId": resolved_store_id, "input": input }),
-        )
+        .query(mutation, json!({ "storeId": resolved_store_id, "input": input }))
         .await?;
 
     let response = data
-        .get("insertInboundShipmentLine")
-        .ok_or_else(|| AppError::UnexpectedResponse("missing insertInboundShipmentLine".into()))?;
+        .get(field)
+        .ok_or_else(|| AppError::UnexpectedResponse(format!("missing {field}")))?;
     let node = unwrap_mutation_response(response, "InvoiceLineNode")?;
     Ok(format!(
         "Inbound shipment line created:\n{}",
@@ -384,6 +470,7 @@ pub async fn update_inbound_shipment_line(
     location_id: Option<String>,
     note: Option<String>,
     status: Option<String>,
+    external: bool,
     store_id: Option<String>,
 ) -> Result<String, AppError> {
     let resolved_store_id = client.require_store_id(store_id).await?;
@@ -423,16 +510,19 @@ pub async fn update_inbound_shipment_line(
         input["status"] = json!(v);
     }
 
+    let (mutation, field) = if external {
+        (UPDATE_EXTERNAL_LINE_MUTATION, "updateInboundShipmentExternalLine")
+    } else {
+        (UPDATE_LINE_MUTATION, "updateInboundShipmentLine")
+    };
+
     let data: Value = client
-        .query(
-            UPDATE_LINE_MUTATION,
-            json!({ "storeId": resolved_store_id, "input": input }),
-        )
+        .query(mutation, json!({ "storeId": resolved_store_id, "input": input }))
         .await?;
 
     let response = data
-        .get("updateInboundShipmentLine")
-        .ok_or_else(|| AppError::UnexpectedResponse("missing updateInboundShipmentLine".into()))?;
+        .get(field)
+        .ok_or_else(|| AppError::UnexpectedResponse(format!("missing {field}")))?;
     let node = unwrap_mutation_response(response, "InvoiceLineNode")?;
     Ok(format!(
         "Inbound shipment line updated:\n{}",
@@ -443,20 +533,24 @@ pub async fn update_inbound_shipment_line(
 pub async fn delete_inbound_shipment_line(
     client: &OmSupplyClient,
     id: String,
+    external: bool,
     store_id: Option<String>,
 ) -> Result<String, AppError> {
     let resolved_store_id = client.require_store_id(store_id).await?;
 
+    let (mutation, field) = if external {
+        (DELETE_EXTERNAL_LINE_MUTATION, "deleteInboundShipmentExternalLine")
+    } else {
+        (DELETE_LINE_MUTATION, "deleteInboundShipmentLine")
+    };
+
     let data: Value = client
-        .query(
-            DELETE_LINE_MUTATION,
-            json!({ "storeId": resolved_store_id, "input": { "id": id } }),
-        )
+        .query(mutation, json!({ "storeId": resolved_store_id, "input": { "id": id } }))
         .await?;
 
     let response = data
-        .get("deleteInboundShipmentLine")
-        .ok_or_else(|| AppError::UnexpectedResponse("missing deleteInboundShipmentLine".into()))?;
+        .get(field)
+        .ok_or_else(|| AppError::UnexpectedResponse(format!("missing {field}")))?;
     unwrap_mutation_response(response, "DeleteResponse")?;
     Ok(format!("Inbound shipment line deleted (id={id})"))
 }

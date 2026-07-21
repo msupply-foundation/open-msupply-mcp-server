@@ -39,7 +39,7 @@ const LIST_QUERY: &str = r#"
         nodes {
           id number status supplier { id name } createdDatetime
           confirmedDatetime sentDatetime finalisedDatetime
-          requestedDeliveryDate expectedDeliveryDate
+          requestedDeliveryDate
           reference comment
         }
       }
@@ -56,7 +56,7 @@ const DETAIL_QUERY: &str = r#"
         supplier { id name code }
         createdDatetime confirmedDatetime sentDatetime finalisedDatetime
         contractSignedDate advancePaidDate receivedAtPortDate
-        requestedDeliveryDate expectedDeliveryDate
+        requestedDeliveryDate
         supplierDiscountPercentage supplierDiscountAmount
         currencyId foreignExchangeRate shippingMethod
         supplierAgent authorisingOfficer1 authorisingOfficer2
@@ -66,9 +66,9 @@ const DETAIL_QUERY: &str = r#"
         lines {
           totalCount
           nodes {
-            id itemId itemName itemCode
+            id item { id code name }
             requestedPackSize requestedNumberOfUnits
-            adjustedNumberOfUnits
+            adjustedNumberOfUnits receivedNumberOfUnits
             requestedDeliveryDate expectedDeliveryDate
             pricePerPackBeforeDiscount pricePerPackAfterDiscount
             note unit supplierItemCode comment status
