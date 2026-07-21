@@ -1914,7 +1914,7 @@ impl OmSupplyServer {
         }
     }
 
-    #[tool(description = "Update an inbound shipment. Set status to advance through SHIPPED->DELIVERED->RECEIVED->VERIFIED. `receivedDatetime` is the ONLY backdate-able datetime — delivered/verified are server-stamped at the moment of transition.")]
+    #[tool(description = "Update an inbound shipment. Set status to advance through SHIPPED->DELIVERED->RECEIVED->VERIFIED. `receivedDatetime` is the ONLY backdate-able datetime — delivered/verified are server-stamped at the moment of transition. NOTE: for purchase-order-linked inbounds (invoice has a purchaseOrderId — see get_invoice) use update_inbound_shipment_external instead.")]
     async fn update_inbound_shipment(
         &self,
         Parameters(p): Parameters<UpdateInboundShipmentParams>,
@@ -1929,6 +1929,7 @@ impl OmSupplyServer {
             p.colour,
             p.other_party_id,
             p.received_datetime,
+            false,
             p.store_id,
         )
         .await
@@ -1949,7 +1950,7 @@ impl OmSupplyServer {
         }
     }
 
-    #[tool(description = "Add a received item line to an inbound shipment. Supports expiryDate and manufactureDate for realistic batch ageing — essential for seeding historic stock data.")]
+    #[tool(description = "Add a received item line to an inbound shipment. Supports expiryDate and manufactureDate for realistic batch ageing — essential for seeding historic stock data. NOTE: for purchase-order-linked inbounds (invoice has a purchaseOrderId) use insert_inbound_shipment_external_line instead.")]
     async fn insert_inbound_shipment_line(
         &self,
         Parameters(p): Parameters<InsertInboundShipmentLineParams>,
@@ -1976,6 +1977,7 @@ impl OmSupplyServer {
             p.campaign_id,
             p.program_id,
             p.purchase_order_line_id,
+            false,
             p.id,
             p.store_id,
         )
@@ -1986,7 +1988,7 @@ impl OmSupplyServer {
         }
     }
 
-    #[tool(description = "Update an inbound shipment line (batch, expiry, quantity, etc.).")]
+    #[tool(description = "Update an inbound shipment line (batch, expiry, quantity, etc.). NOTE: for purchase-order-linked inbounds (invoice has a purchaseOrderId) use update_inbound_shipment_external_line instead.")]
     async fn update_inbound_shipment_line(
         &self,
         Parameters(p): Parameters<UpdateInboundShipmentLineParams>,
@@ -2005,6 +2007,7 @@ impl OmSupplyServer {
             p.location_id,
             p.note,
             p.status,
+            false,
             p.store_id,
         )
         .await
@@ -2019,7 +2022,117 @@ impl OmSupplyServer {
         &self,
         Parameters(p): Parameters<DeleteByIdParams>,
     ) -> Result<CallToolResult, McpError> {
-        match inbound_shipments::delete_inbound_shipment_line(&self.client, p.id, p.store_id)
+        match inbound_shipments::delete_inbound_shipment_line(&self.client, p.id, false, p.store_id)
+            .await
+        {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    // -------- External (purchase-order-linked) inbound shipments --------
+    // PO-generated inbounds (invoice has a purchaseOrderId — see get_invoice)
+    // must be written through these external variants; the plain inbound tools
+    // reject them with "Bad user input".
+
+    #[tool(description = "Update a PURCHASE-ORDER-LINKED (external) inbound shipment — advance status SHIPPED->DELIVERED->RECEIVED->VERIFIED, etc. Use this instead of update_inbound_shipment when the invoice has a purchaseOrderId (visible via get_invoice); the plain tool rejects PO-linked inbounds with 'Bad user input'. `receivedDatetime` is the only backdate-able datetime.")]
+    async fn update_inbound_shipment_external(
+        &self,
+        Parameters(p): Parameters<UpdateInboundShipmentParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match inbound_shipments::update_inbound_shipment(
+            &self.client,
+            p.id,
+            p.status,
+            p.on_hold,
+            p.comment,
+            p.their_reference,
+            p.colour,
+            p.other_party_id,
+            p.received_datetime,
+            true,
+            p.store_id,
+        )
+        .await
+        {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Add a received item line to a PURCHASE-ORDER-LINKED (external) inbound shipment (batch, expiry, cost/sell price, packs). Use this instead of insert_inbound_shipment_line when the invoice has a purchaseOrderId. Link to a PO line with purchaseOrderLineId.")]
+    async fn insert_inbound_shipment_external_line(
+        &self,
+        Parameters(p): Parameters<InsertInboundShipmentLineParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match inbound_shipments::insert_inbound_shipment_line(
+            &self.client,
+            p.invoice_id,
+            p.item_id,
+            p.pack_size,
+            p.number_of_packs,
+            p.cost_price_per_pack,
+            p.sell_price_per_pack,
+            p.batch,
+            p.expiry_date,
+            p.manufacture_date,
+            p.location_id,
+            p.note,
+            p.tax_percentage,
+            p.total_before_tax,
+            p.item_variant_id,
+            p.vvm_status_id,
+            p.donor_id,
+            p.manufacturer_id,
+            p.campaign_id,
+            p.program_id,
+            p.purchase_order_line_id,
+            true,
+            p.id,
+            p.store_id,
+        )
+        .await
+        {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Update a line on a PURCHASE-ORDER-LINKED (external) inbound shipment — set batch, expiry, cost/sell price, received packs. Use this instead of update_inbound_shipment_line when the invoice has a purchaseOrderId; the plain tool rejects PO-linked inbounds with 'Bad user input'. This is the key step to receive PO goods into stock.")]
+    async fn update_inbound_shipment_external_line(
+        &self,
+        Parameters(p): Parameters<UpdateInboundShipmentLineParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match inbound_shipments::update_inbound_shipment_line(
+            &self.client,
+            p.id,
+            p.item_id,
+            p.pack_size,
+            p.number_of_packs,
+            p.cost_price_per_pack,
+            p.sell_price_per_pack,
+            p.batch,
+            p.expiry_date,
+            p.manufacture_date,
+            p.location_id,
+            p.note,
+            p.status,
+            true,
+            p.store_id,
+        )
+        .await
+        {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Remove a line from a PURCHASE-ORDER-LINKED (external) inbound shipment. Use this instead of delete_inbound_shipment_line when the invoice has a purchaseOrderId.")]
+    async fn delete_inbound_shipment_external_line(
+        &self,
+        Parameters(p): Parameters<DeleteByIdParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match inbound_shipments::delete_inbound_shipment_line(&self.client, p.id, true, p.store_id)
             .await
         {
             Ok(t) => ok(t),
@@ -2276,7 +2389,7 @@ impl OmSupplyServer {
         }
     }
 
-    #[tool(description = "Add a line to a purchase order. Pass itemIdOrCode (item UUID or code), quantities, prices, and optional dates.")]
+    #[tool(description = "Add a line to a purchase order. Pass itemIdOrCode (item UUID or code), quantities, prices, and optional dates. IMPORTANT: requestedNumberOfUnits is in UNITS, not packs (e.g. requestedPackSize=28 with requestedNumberOfUnits=6000 orders 6000 tablets ≈ 214 packs). Order in units or the PO/receipt quantities come out tiny.")]
     async fn insert_purchase_order_line(
         &self,
         Parameters(p): Parameters<InsertPurchaseOrderLineParams>,
@@ -2306,7 +2419,7 @@ impl OmSupplyServer {
         }
     }
 
-    #[tool(description = "Update a purchase order line (quantity, price, status NEW/SENT/CLOSED, dates).")]
+    #[tool(description = "Update a purchase order line (quantity, price, status NEW/SENT/CLOSED, dates). Note: requestedNumberOfUnits/adjustedNumberOfUnits are in UNITS, not packs.")]
     async fn update_purchase_order_line(
         &self,
         Parameters(p): Parameters<UpdatePurchaseOrderLineParams>,

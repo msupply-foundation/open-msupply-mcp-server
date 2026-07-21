@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "open-msupply",
   "display_name": "Open mSupply",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Connect AI assistants to Open mSupply for querying inventory, stock levels, shipments, requisitions, and more.",
   "long_description": "The Open mSupply MCP server enables AI assistants to interact with your Open mSupply instance via the GraphQL API. Query stock levels, search items, track shipments, view invoices, and get dashboard summaries - all through natural language.\n\nShips as a self-contained native binary - no runtime required. Requires a running Open mSupply server (v2.x+) with valid credentials.",
   "author": {
@@ -278,6 +278,22 @@
     {
       "name": "delete_inbound_shipment_line",
       "description": "Remove an inbound shipment line."
+    },
+    {
+      "name": "update_inbound_shipment_external",
+      "description": "Update a purchase-order-linked (external) inbound shipment \u2014 status transitions etc. Use when the invoice has a purchaseOrderId."
+    },
+    {
+      "name": "insert_inbound_shipment_external_line",
+      "description": "Add a received line to a purchase-order-linked (external) inbound shipment."
+    },
+    {
+      "name": "update_inbound_shipment_external_line",
+      "description": "Update a line on a purchase-order-linked (external) inbound shipment (batch, expiry, price, received packs) \u2014 the key step to receive PO goods."
+    },
+    {
+      "name": "delete_inbound_shipment_external_line",
+      "description": "Remove a line from a purchase-order-linked (external) inbound shipment."
     },
     {
       "name": "insert_stocktake",

@@ -14,14 +14,12 @@ const INVOICES_QUERY: &str = r#"
     $desc: Boolean
     $filter: InvoiceFilterInput
     $storeId: String!
-    $type: [InvoiceTypeInput!]
   ) {
     invoices(
       page: { first: $first, offset: $offset }
       sort: { key: $key, desc: $desc }
       filter: $filter
       storeId: $storeId
-      type: $type
     ) {
       ... on InvoiceConnector {
         __typename
@@ -43,6 +41,7 @@ const INVOICE_DETAIL_QUERY: &str = r#"
       ... on InvoiceNode {
         __typename
         id invoiceNumber type status otherPartyName
+        purchaseOrderId
         createdDatetime allocatedDatetime pickedDatetime
         shippedDatetime deliveredDatetime verifiedDatetime
         comment theirReference transportReference colour taxPercentage
@@ -149,6 +148,13 @@ pub async fn list_invoices(
     let (first, offset) = pagination_vars(first, offset);
 
     let mut filter = Map::new();
+    // Filter type via the standard `filter.type.equalTo` rather than the
+    // top-level `type` argument: at the invoice level a purchase-order-linked
+    // inbound is still an INBOUND_SHIPMENT (there is no separate invoice type
+    // for it), so equalTo INBOUND_SHIPMENT includes PO-linked inbounds too.
+    if let Some(t) = invoice_type {
+        filter.insert("type".into(), json!({ "equalTo": t }));
+    }
     if let Some(s) = status {
         filter.insert("status".into(), json!({ "equalTo": s }));
     }
@@ -160,11 +166,6 @@ pub async fn list_invoices(
         Value::Null
     } else {
         Value::Object(filter)
-    };
-
-    let type_arg = match invoice_type {
-        Some(t) => json!([t]),
-        None => Value::Null,
     };
 
     let key = sort_by.unwrap_or_else(|| "createdDatetime".into());
@@ -179,7 +180,6 @@ pub async fn list_invoices(
                 "desc": desc.unwrap_or(true),
                 "filter": filter_value,
                 "storeId": resolved_store_id,
-                "type": type_arg,
             }),
         )
         .await?;
