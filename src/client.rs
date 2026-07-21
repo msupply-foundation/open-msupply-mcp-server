@@ -56,6 +56,65 @@ impl OmSupplyClient {
         self.default_store_id.read().await.clone()
     }
 
+    /// The server's static-files URL for a generated report/file id.
+    /// Reports are generated server-side and fetched from `/files?id=...`.
+    pub fn file_url(&self, file_id: &str) -> String {
+        let base = self
+            .graphql_url
+            .strip_suffix("/graphql")
+            .unwrap_or(self.graphql_url.as_str());
+        format!("{base}/files?id={file_id}")
+    }
+
+    /// Fetch a generated file's contents as UTF-8 text (e.g. an HTML report).
+    /// Handles lazy auth + a single 401 re-auth retry, mirroring `query`.
+    /// Errors if the file is not valid UTF-8 (e.g. a PDF/Excel binary).
+    pub async fn fetch_file_text(&self, file_id: &str) -> Result<String, AppError> {
+        if self.token.read().await.is_none() {
+            self.authenticate().await?;
+        }
+        match self.try_fetch_file_text(file_id).await {
+            Err(AppError::Auth(_)) => {
+                *self.token.write().await = None;
+                self.authenticate().await?;
+                self.try_fetch_file_text(file_id).await
+            }
+            other => other,
+        }
+    }
+
+    async fn try_fetch_file_text(&self, file_id: &str) -> Result<String, AppError> {
+        let token = self
+            .token
+            .read()
+            .await
+            .clone()
+            .ok_or_else(|| AppError::Auth("no token available".into()))?;
+        let url = self.file_url(file_id);
+        let response = self
+            .http
+            .get(&url)
+            .bearer_auth(&token)
+            .send()
+            .await
+            .map_err(|e| AppError::from_request(e, &url))?;
+        let status = response.status();
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            return Err(AppError::Auth(format!("HTTP {status}")));
+        }
+        if !status.is_success() {
+            return Err(AppError::UnexpectedResponse(format!(
+                "HTTP {status} fetching {url}"
+            )));
+        }
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|e| AppError::from_request(e, &url))?;
+        String::from_utf8(bytes.to_vec())
+            .map_err(|_| AppError::UnexpectedResponse("report file is not UTF-8 text".into()))
+    }
+
     /// Resolve an effective store ID: caller-supplied override > default > error.
     pub async fn require_store_id(&self, provided: Option<String>) -> Result<String, AppError> {
         if let Some(id) = provided.filter(|s| !s.is_empty()) {

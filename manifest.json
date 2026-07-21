@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "open-msupply",
   "display_name": "Open mSupply",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Connect AI assistants to Open mSupply for querying inventory, stock levels, shipments, requisitions, and more.",
   "long_description": "The Open mSupply MCP server enables AI assistants to interact with your Open mSupply instance via the GraphQL API. Query stock levels, search items, track shipments, view invoices, and get dashboard summaries - all through natural language.\n\nShips as a self-contained native binary - no runtime required. Requires a running Open mSupply server (v2.x+) with valid credentials.",
   "author": {
@@ -350,6 +350,18 @@
     {
       "name": "delete_purchase_order_lines",
       "description": "Delete one or more purchase order lines (bulk)."
+    },
+    {
+      "name": "list_reports",
+      "description": "List available reports, optionally filtered by name or context."
+    },
+    {
+      "name": "get_report_parameters",
+      "description": "Get a report's argument (parameter) JSON schema before running it."
+    },
+    {
+      "name": "run_report",
+      "description": "Run a report (generateReport); HTML output is inlined, PDF/Excel return a download URL."
     }
   ],
   "compatibility": {

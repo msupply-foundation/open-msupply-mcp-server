@@ -13,6 +13,7 @@ mod items;
 mod outbound_shipments;
 mod programs;
 mod purchase_orders;
+mod reports;
 mod requisitions;
 mod rnr;
 mod stock;
@@ -975,6 +976,61 @@ pub struct UpdateStocktakeLineParams {
     #[serde(rename = "reasonOptionId")]
     pub reason_option_id: Option<String>,
     pub comment: Option<String>,
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+// -------- Report params --------
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ListReportsParams {
+    /// Filter by report name (substring match)
+    pub name: Option<String>,
+    /// Filter by report context, e.g. OUTBOUND_SHIPMENT | INBOUND_SHIPMENT | REQUISITION | STOCKTAKE | PATIENT | PRESCRIPTION | INTERNAL_ORDER | PURCHASE_ORDER | REPORT | STOCK_MOVEMENT
+    pub context: Option<String>,
+    /// Report language (default "en")
+    #[serde(rename = "userLanguage")]
+    pub user_language: Option<String>,
+    /// Max results (default 25)
+    #[serde(default, deserialize_with = "flex::opt_u32")]
+    pub first: Option<u32>,
+    /// Pagination offset
+    #[serde(default, deserialize_with = "flex::opt_u32")]
+    pub offset: Option<u32>,
+    /// Store ID (uses default if not provided)
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct GetReportParametersParams {
+    /// The report ID (from list_reports)
+    #[serde(rename = "reportId")]
+    pub report_id: String,
+    /// Report language (default "en")
+    #[serde(rename = "userLanguage")]
+    pub user_language: Option<String>,
+    /// Store ID (uses default if not provided)
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct RunReportParams {
+    /// The report ID to run (from list_reports)
+    #[serde(rename = "reportId")]
+    pub report_id: String,
+    /// The record this report is about, matching the report's context (e.g. an invoice id for an OUTBOUND_SHIPMENT report, a requisition id, a stocktake id). Omit for reports that need no record.
+    #[serde(rename = "dataId")]
+    pub data_id: Option<String>,
+    /// Report arguments as a JSON object, matching the report's argumentSchema.jsonSchema (see get_report_parameters). Omit if the report takes no parameters.
+    pub arguments: Option<serde_json::Value>,
+    /// Output format: HTML (default, inlined in the result) | PDF | EXCEL (binary — returns a download URL)
+    pub format: Option<String>,
+    /// Report language (default "en")
+    #[serde(rename = "userLanguage")]
+    pub user_language: Option<String>,
+    /// Store ID (uses default if not provided)
     #[serde(rename = "storeId")]
     pub store_id: Option<String>,
 }
@@ -2456,6 +2512,68 @@ impl OmSupplyServer {
         Parameters(p): Parameters<DeletePurchaseOrderLinesParams>,
     ) -> Result<CallToolResult, McpError> {
         match purchase_orders::delete_purchase_order_lines(&self.client, p.ids, p.store_id).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    // -------- Reports --------
+
+    #[tool(description = "List available reports in this store. Optionally filter by name or context (e.g. OUTBOUND_SHIPMENT, REQUISITION, STOCKTAKE, PATIENT, PURCHASE_ORDER, STOCK_MOVEMENT). Returns id, name, code, context, subContext, isCustom, isActive, version. Use the id with get_report_parameters and run_report.")]
+    async fn list_reports(
+        &self,
+        Parameters(p): Parameters<ListReportsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match reports::list_reports(
+            &self.client,
+            p.name,
+            p.context,
+            p.user_language,
+            p.first,
+            p.offset,
+            p.store_id,
+        )
+        .await
+        {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Get a report's argument (parameter) schema — the JSON Schema describing the `arguments` object run_report accepts, plus its context. Call this before run_report on a parameterised report to learn which arguments to pass.")]
+    async fn get_report_parameters(
+        &self,
+        Parameters(p): Parameters<GetReportParametersParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match reports::get_report_parameters(
+            &self.client,
+            p.report_id,
+            p.user_language,
+            p.store_id,
+        )
+        .await
+        {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Run (generate) a report. Pass reportId (from list_reports), an optional dataId for the record the report is about (e.g. an invoice/requisition/stocktake id matching the report context), and optional `arguments` (JSON object matching the report's argumentSchema — see get_report_parameters). format defaults to HTML (rendered content is inlined in the result); PDF/EXCEL return a download URL. Runs in the given store's context.")]
+    async fn run_report(
+        &self,
+        Parameters(p): Parameters<RunReportParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match reports::run_report(
+            &self.client,
+            p.report_id,
+            p.data_id,
+            p.arguments,
+            p.format,
+            p.user_language,
+            p.store_id,
+        )
+        .await
+        {
             Ok(t) => ok(t),
             Err(e) => err(e),
         }
