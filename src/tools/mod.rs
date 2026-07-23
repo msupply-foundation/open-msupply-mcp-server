@@ -1189,6 +1189,7 @@ pub struct UpdateAssetParams {
     /// Storage location IDs this equipment cools (replaces the current set)
     #[serde(rename = "locationIds")]
     pub location_ids: Option<Vec<String>>,
+    /// Free-form JSON properties
     pub properties: Option<serde_json::Value>,
     #[serde(rename = "storeId")]
     pub store_id: Option<String>,
@@ -3153,5 +3154,34 @@ mod flex_tests {
         let p: InsertRequestRequisitionParams = serde_json::from_value(json).unwrap();
         assert_eq!(p.max_months_of_stock, 6.0);
         assert_eq!(p.min_months_of_stock, 3.0);
+    }
+
+    /// Regression: a `serde_json::Value` param field with no schemars metadata
+    /// serializes as a bare `true` subschema. Some MCP clients (e.g. Claude
+    /// Code) reject boolean subschemas, and one bad tool kills the whole tool
+    /// list ("tools fetch failed", 0 tools). A doc comment forces an object
+    /// subschema. Every free-form JSON field must therefore carry a description.
+    #[test]
+    fn json_value_param_fields_emit_object_subschemas() {
+        macro_rules! check {
+            ($t:ty, $field:literal) => {{
+                let schema = serde_json::to_value(schemars::schema_for!($t)).unwrap();
+                let sub = schema
+                    .pointer(concat!("/properties/", $field))
+                    .unwrap_or_else(|| {
+                        panic!("{}: missing `{}` subschema", stringify!($t), $field)
+                    });
+                assert!(
+                    sub.is_object(),
+                    "{}: `{}` must be an object subschema (not bare `true`), got {sub}",
+                    stringify!($t),
+                    $field
+                );
+            }};
+        }
+        check!(UpdateAssetParams, "properties");
+        check!(InsertAssetParams, "properties");
+        check!(RunReportParams, "arguments");
+        check!(UpdateRnrFormParams, "lines");
     }
 }
