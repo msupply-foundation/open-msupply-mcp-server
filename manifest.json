@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "open-msupply",
   "display_name": "Open mSupply",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "description": "Connect AI assistants to Open mSupply for querying inventory, stock levels, shipments, requisitions, and more.",
   "long_description": "The Open mSupply MCP server enables AI assistants to interact with your Open mSupply instance via the GraphQL API. Query stock levels, search items, track shipments, view invoices, and get dashboard summaries - all through natural language.\n\nShips as a self-contained native binary - no runtime required. Requires a running Open mSupply server (v2.x+) with valid credentials.",
   "author": {
@@ -446,6 +446,26 @@
     {
       "name": "acknowledge_temperature_breach",
       "description": "Acknowledge a temperature breach."
+    },
+    {
+      "name": "list_vaccine_courses",
+      "description": "List vaccine courses (filter by name or programId)."
+    },
+    {
+      "name": "get_vaccine_course",
+      "description": "Get a vaccine course with items, doses, and per-store config."
+    },
+    {
+      "name": "insert_vaccine_course",
+      "description": "Create a vaccine course (with optional items, doses, and store config)."
+    },
+    {
+      "name": "update_vaccine_course",
+      "description": "Update a vaccine course; storeConfigs manages per-store config (vaccine_course_store_config)."
+    },
+    {
+      "name": "delete_vaccine_course",
+      "description": "Delete a vaccine course."
     }
   ],
   "compatibility": {
