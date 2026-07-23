@@ -22,6 +22,7 @@ mod rnr;
 mod stock;
 mod stocktakes;
 mod stores;
+mod vaccine_courses;
 
 use std::sync::Arc;
 
@@ -1310,6 +1311,89 @@ pub struct AcknowledgeTemperatureBreachParams {
     /// The temperature breach ID
     pub id: String,
     pub comment: Option<String>,
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+// -------- Vaccine course params --------
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ListVaccineCoursesParams {
+    /// Search by vaccine course name (substring match)
+    pub search: Option<String>,
+    /// Filter by program ID
+    #[serde(rename = "programId")]
+    pub program_id: Option<String>,
+    #[serde(default, deserialize_with = "flex::opt_u32")]
+    pub first: Option<u32>,
+    #[serde(default, deserialize_with = "flex::opt_u32")]
+    pub offset: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct VaccineCourseIdParams {
+    /// The vaccine course ID
+    pub id: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct InsertVaccineCourseParams {
+    /// Vaccine course name
+    pub name: String,
+    /// Program ID this course belongs to
+    #[serde(rename = "programId")]
+    pub program_id: String,
+    /// Target coverage rate (percent). Required by the server.
+    #[serde(rename = "coverageRate", default, deserialize_with = "flex::opt_f64")]
+    pub coverage_rate: Option<f64>,
+    /// Expected wastage rate (percent). Required by the server.
+    #[serde(rename = "wastageRate", default, deserialize_with = "flex::opt_f64")]
+    pub wastage_rate: Option<f64>,
+    /// Whether to include this course in GAPS calculations. Required by the server.
+    #[serde(rename = "useInGapsCalculations", default, deserialize_with = "flex::opt_bool")]
+    pub use_in_gaps_calculations: Option<bool>,
+    /// Whether doses may be skipped. Required by the server.
+    #[serde(rename = "canSkipDose", default, deserialize_with = "flex::opt_bool")]
+    pub can_skip_dose: Option<bool>,
+    #[serde(rename = "demographicId")]
+    pub demographic_id: Option<String>,
+    /// JSON array of vaccine items: [{ "id": uuid, "itemId": uuid }, ...]
+    #[serde(rename = "vaccineItems")]
+    pub vaccine_items: Option<serde_json::Value>,
+    /// JSON array of doses: [{ "id": uuid, "label": str, "minAge": num, "maxAge": num, "minIntervalDays": int, "customAgeLabel"?: str }, ...]
+    pub doses: Option<serde_json::Value>,
+    /// Per-store config (vaccine_course_store_config). JSON array: [{ "id": uuid, "storeId": id, "wastageRate": { "value": num }, "coverageRate": { "value": num } }, ...]
+    #[serde(rename = "storeConfigs")]
+    pub store_configs: Option<serde_json::Value>,
+    /// Optional client-supplied UUID
+    pub id: Option<String>,
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct UpdateVaccineCourseParams {
+    /// The vaccine course ID
+    pub id: String,
+    /// JSON array of vaccine items (REPLACES the full list): [{ "id": uuid, "itemId": uuid }, ...]. Fetch current via get_vaccine_course, modify, resend.
+    #[serde(rename = "vaccineItems")]
+    pub vaccine_items: serde_json::Value,
+    /// JSON array of doses (REPLACES the full list): [{ "id": uuid, "label": str, "minAge": num, "maxAge": num, "minIntervalDays": int, "customAgeLabel"?: str }, ...]
+    pub doses: serde_json::Value,
+    pub name: Option<String>,
+    #[serde(rename = "coverageRate", default, deserialize_with = "flex::opt_f64")]
+    pub coverage_rate: Option<f64>,
+    #[serde(rename = "wastageRate", default, deserialize_with = "flex::opt_f64")]
+    pub wastage_rate: Option<f64>,
+    #[serde(rename = "useInGapsCalculations", default, deserialize_with = "flex::opt_bool")]
+    pub use_in_gaps_calculations: Option<bool>,
+    #[serde(rename = "canSkipDose", default, deserialize_with = "flex::opt_bool")]
+    pub can_skip_dose: Option<bool>,
+    #[serde(rename = "demographicId")]
+    pub demographic_id: Option<String>,
+    /// Per-store config (vaccine_course_store_config), REPLACES the list. JSON array: [{ "id": uuid, "storeId": id, "wastageRate": { "value": num }, "coverageRate": { "value": num } }, ...]
+    #[serde(rename = "storeConfigs")]
+    pub store_configs: Option<serde_json::Value>,
     #[serde(rename = "storeId")]
     pub store_id: Option<String>,
 }
@@ -3094,6 +3178,94 @@ impl OmSupplyServer {
             Err(e) => err(e),
         }
     }
+
+    // -------- Vaccine courses --------
+
+    #[tool(description = "List vaccine courses (id, name, programId, demographicId, coverage/wastage rates, flags). Filter by name search or programId. Vaccine courses are program/central data (no store context).")]
+    async fn list_vaccine_courses(
+        &self,
+        Parameters(p): Parameters<ListVaccineCoursesParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match vaccine_courses::list_vaccine_courses(&self.client, p.search, p.program_id, p.first, p.offset).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Get a vaccine course with its vaccine items, dose schedule, and per-store config (storeConfigs = the vaccine_course_store_config rows). Use this before update_vaccine_course to fetch the current lists to modify.")]
+    async fn get_vaccine_course(
+        &self,
+        Parameters(p): Parameters<VaccineCourseIdParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match vaccine_courses::get_vaccine_course(&self.client, p.id).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Create a vaccine course under a program. name and programId are required; coverageRate/wastageRate/useInGapsCalculations/canSkipDose are required by the server. vaccineItems/doses default to empty. storeConfigs sets the initial per-store config (vaccine_course_store_config).")]
+    async fn insert_vaccine_course(
+        &self,
+        Parameters(p): Parameters<InsertVaccineCourseParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match vaccine_courses::insert_vaccine_course(
+            &self.client,
+            p.name,
+            p.program_id,
+            p.coverage_rate,
+            p.wastage_rate,
+            p.use_in_gaps_calculations,
+            p.can_skip_dose,
+            p.demographic_id,
+            p.vaccine_items,
+            p.doses,
+            p.store_configs,
+            p.id,
+            p.store_id,
+        )
+        .await
+        {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Update a vaccine course. Full-replace: vaccineItems and doses are required and REPLACE the existing lists (fetch with get_vaccine_course, modify, resend). storeConfigs replaces the per-store config (vaccine_course_store_config) — this is how you CRUD store config: include an entry to upsert it, omit it from the list to drop it.")]
+    async fn update_vaccine_course(
+        &self,
+        Parameters(p): Parameters<UpdateVaccineCourseParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match vaccine_courses::update_vaccine_course(
+            &self.client,
+            p.id,
+            p.vaccine_items,
+            p.doses,
+            p.name,
+            p.coverage_rate,
+            p.wastage_rate,
+            p.use_in_gaps_calculations,
+            p.can_skip_dose,
+            p.demographic_id,
+            p.store_configs,
+            p.store_id,
+        )
+        .await
+        {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Delete a vaccine course by id.")]
+    async fn delete_vaccine_course(
+        &self,
+        Parameters(p): Parameters<VaccineCourseIdParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match vaccine_courses::delete_vaccine_course(&self.client, p.id).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
 }
 
 #[tool_handler]
@@ -3183,5 +3355,11 @@ mod flex_tests {
         check!(InsertAssetParams, "properties");
         check!(RunReportParams, "arguments");
         check!(UpdateRnrFormParams, "lines");
+        check!(InsertVaccineCourseParams, "vaccineItems");
+        check!(InsertVaccineCourseParams, "doses");
+        check!(InsertVaccineCourseParams, "storeConfigs");
+        check!(UpdateVaccineCourseParams, "vaccineItems");
+        check!(UpdateVaccineCourseParams, "doses");
+        check!(UpdateVaccineCourseParams, "storeConfigs");
     }
 }
