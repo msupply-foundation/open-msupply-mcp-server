@@ -5,10 +5,13 @@
 //! 2. delegates to a free function in the relevant sub-module,
 //! 3. converts `Result<String, AppError>` into the MCP `CallToolResult` envelope.
 
+mod assets;
+mod cold_chain;
 mod dashboard;
 mod fulfil;
 mod inbound_shipments;
 mod invoices;
+mod locations;
 mod items;
 mod outbound_shipments;
 mod programs;
@@ -1031,6 +1034,281 @@ pub struct RunReportParams {
     #[serde(rename = "userLanguage")]
     pub user_language: Option<String>,
     /// Store ID (uses default if not provided)
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+// -------- Location params --------
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ListLocationsParams {
+    /// Search by location name (substring match)
+    pub search: Option<String>,
+    /// Sort field: name | code (default name)
+    #[serde(rename = "sortBy")]
+    pub sort_by: Option<String>,
+    /// Sort descending
+    #[serde(default, deserialize_with = "flex::opt_bool")]
+    pub desc: Option<bool>,
+    #[serde(default, deserialize_with = "flex::opt_u32")]
+    pub first: Option<u32>,
+    #[serde(default, deserialize_with = "flex::opt_u32")]
+    pub offset: Option<u32>,
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct InsertLocationParams {
+    /// Location code (required, unique within store)
+    pub code: String,
+    pub name: Option<String>,
+    /// Place the location on hold (its stock becomes non-allocatable)
+    #[serde(rename = "onHold", default, deserialize_with = "flex::opt_bool")]
+    pub on_hold: Option<bool>,
+    #[serde(rename = "locationTypeId")]
+    pub location_type_id: Option<String>,
+    #[serde(default, deserialize_with = "flex::opt_f64")]
+    pub volume: Option<f64>,
+    pub id: Option<String>,
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct UpdateLocationParams {
+    /// The location ID
+    pub id: String,
+    pub code: Option<String>,
+    pub name: Option<String>,
+    /// Set false to release an on-hold location (e.g. Quarantine) so its stock becomes allocatable again
+    #[serde(rename = "onHold", default, deserialize_with = "flex::opt_bool")]
+    pub on_hold: Option<bool>,
+    #[serde(rename = "locationTypeId")]
+    pub location_type_id: Option<String>,
+    #[serde(default, deserialize_with = "flex::opt_f64")]
+    pub volume: Option<f64>,
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct RelocateStockParams {
+    /// The stock line to move (from get_stock_lines)
+    #[serde(rename = "stockLineId")]
+    pub stock_line_id: String,
+    /// Destination location ID (from list_locations)
+    #[serde(rename = "toLocationId")]
+    pub to_location_id: String,
+    /// Packs to move (default: the whole stock line)
+    #[serde(rename = "numberOfPacks", default, deserialize_with = "flex::opt_f64")]
+    pub number_of_packs: Option<f64>,
+    pub comment: Option<String>,
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+// -------- Asset (cold-chain equipment) params --------
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ListAssetsParams {
+    /// Search by asset number (substring match)
+    pub search: Option<String>,
+    #[serde(rename = "classId")]
+    pub class_id: Option<String>,
+    #[serde(rename = "categoryId")]
+    pub category_id: Option<String>,
+    #[serde(rename = "typeId")]
+    pub type_id: Option<String>,
+    /// Only assets whose current status is FUNCTIONING
+    #[serde(rename = "functioningOnly", default, deserialize_with = "flex::opt_bool")]
+    pub functioning_only: Option<bool>,
+    #[serde(default, deserialize_with = "flex::opt_u32")]
+    pub first: Option<u32>,
+    #[serde(default, deserialize_with = "flex::opt_u32")]
+    pub offset: Option<u32>,
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct InsertAssetParams {
+    #[serde(rename = "assetNumber")]
+    pub asset_number: Option<String>,
+    #[serde(rename = "serialNumber")]
+    pub serial_number: Option<String>,
+    /// Catalogue item id (preferred — carries class/category/type). Or pass classId/categoryId/typeId.
+    #[serde(rename = "catalogueItemId")]
+    pub catalogue_item_id: Option<String>,
+    #[serde(rename = "classId")]
+    pub class_id: Option<String>,
+    #[serde(rename = "categoryId")]
+    pub category_id: Option<String>,
+    #[serde(rename = "typeId")]
+    pub type_id: Option<String>,
+    /// YYYY-MM-DD
+    #[serde(rename = "installationDate")]
+    pub installation_date: Option<String>,
+    #[serde(rename = "warrantyStart")]
+    pub warranty_start: Option<String>,
+    #[serde(rename = "warrantyEnd")]
+    pub warranty_end: Option<String>,
+    #[serde(rename = "donorNameId")]
+    pub donor_name_id: Option<String>,
+    pub notes: Option<String>,
+    /// Free-form JSON properties
+    pub properties: Option<serde_json::Value>,
+    pub id: Option<String>,
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct UpdateAssetParams {
+    /// The asset ID
+    pub id: String,
+    #[serde(rename = "assetNumber")]
+    pub asset_number: Option<String>,
+    #[serde(rename = "serialNumber")]
+    pub serial_number: Option<String>,
+    #[serde(rename = "catalogueItemId")]
+    pub catalogue_item_id: Option<String>,
+    pub notes: Option<String>,
+    #[serde(rename = "installationDate")]
+    pub installation_date: Option<String>,
+    #[serde(rename = "replacementDate")]
+    pub replacement_date: Option<String>,
+    #[serde(rename = "warrantyStart")]
+    pub warranty_start: Option<String>,
+    #[serde(rename = "warrantyEnd")]
+    pub warranty_end: Option<String>,
+    #[serde(rename = "donorNameId")]
+    pub donor_name_id: Option<String>,
+    #[serde(rename = "needsReplacement", default, deserialize_with = "flex::opt_bool")]
+    pub needs_replacement: Option<bool>,
+    /// Storage location IDs this equipment cools (replaces the current set)
+    #[serde(rename = "locationIds")]
+    pub location_ids: Option<Vec<String>>,
+    pub properties: Option<serde_json::Value>,
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SetAssetStatusParams {
+    #[serde(rename = "assetId")]
+    pub asset_id: String,
+    /// One of: NOT_IN_USE | FUNCTIONING | FUNCTIONING_BUT_NEEDS_ATTENTION | NOT_FUNCTIONING | DECOMMISSIONED | UNSERVICEABLE
+    pub status: String,
+    #[serde(rename = "reasonId")]
+    pub reason_id: Option<String>,
+    pub comment: Option<String>,
+    /// ISO datetime (defaults to now)
+    #[serde(rename = "logDatetime")]
+    pub log_datetime: Option<String>,
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ListAssetCategoriesParams {
+    #[serde(rename = "classId")]
+    pub class_id: Option<String>,
+    #[serde(default, deserialize_with = "flex::opt_u32")]
+    pub first: Option<u32>,
+    #[serde(default, deserialize_with = "flex::opt_u32")]
+    pub offset: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ListAssetTypesParams {
+    #[serde(rename = "categoryId")]
+    pub category_id: Option<String>,
+    #[serde(default, deserialize_with = "flex::opt_u32")]
+    pub first: Option<u32>,
+    #[serde(default, deserialize_with = "flex::opt_u32")]
+    pub offset: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ListAssetCatalogueItemsParams {
+    /// Search by catalogue item code (substring match)
+    pub search: Option<String>,
+    #[serde(default, deserialize_with = "flex::opt_u32")]
+    pub first: Option<u32>,
+    #[serde(default, deserialize_with = "flex::opt_u32")]
+    pub offset: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct PaginationParams {
+    #[serde(default, deserialize_with = "flex::opt_u32")]
+    pub first: Option<u32>,
+    #[serde(default, deserialize_with = "flex::opt_u32")]
+    pub offset: Option<u32>,
+}
+
+// -------- Cold-chain monitoring params --------
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ListSensorsParams {
+    #[serde(default, deserialize_with = "flex::opt_u32")]
+    pub first: Option<u32>,
+    #[serde(default, deserialize_with = "flex::opt_u32")]
+    pub offset: Option<u32>,
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct GetTemperatureLogsParams {
+    #[serde(rename = "sensorId")]
+    pub sensor_id: Option<String>,
+    /// ISO datetime lower bound (inclusive)
+    #[serde(rename = "fromDatetime")]
+    pub from_datetime: Option<String>,
+    /// ISO datetime upper bound (inclusive)
+    #[serde(rename = "toDatetime")]
+    pub to_datetime: Option<String>,
+    #[serde(default, deserialize_with = "flex::opt_u32")]
+    pub first: Option<u32>,
+    #[serde(default, deserialize_with = "flex::opt_u32")]
+    pub offset: Option<u32>,
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ListTemperatureBreachesParams {
+    #[serde(rename = "unacknowledgedOnly", default, deserialize_with = "flex::opt_bool")]
+    pub unacknowledged_only: Option<bool>,
+    #[serde(default, deserialize_with = "flex::opt_u32")]
+    pub first: Option<u32>,
+    #[serde(default, deserialize_with = "flex::opt_u32")]
+    pub offset: Option<u32>,
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct UpdateSensorParams {
+    /// The sensor ID
+    pub id: String,
+    pub name: Option<String>,
+    #[serde(rename = "isActive", default, deserialize_with = "flex::opt_bool")]
+    pub is_active: Option<bool>,
+    /// Assign the sensor to this location (from list_locations)
+    #[serde(rename = "locationId")]
+    pub location_id: Option<String>,
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct AcknowledgeTemperatureBreachParams {
+    /// The temperature breach ID
+    pub id: String,
+    pub comment: Option<String>,
     #[serde(rename = "storeId")]
     pub store_id: Option<String>,
 }
@@ -2574,6 +2852,243 @@ impl OmSupplyServer {
         )
         .await
         {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    // -------- Locations --------
+
+    #[tool(description = "List storage locations in a store (id, code, name, onHold, volume, volumeUsed, stock count). This is how you discover a locationId — needed for get_stock_lines, relocate_stock, update_sensor, etc.")]
+    async fn list_locations(
+        &self,
+        Parameters(p): Parameters<ListLocationsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match locations::list_locations(&self.client, p.search, p.sort_by, p.desc, p.first, p.offset, p.store_id).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Get a storage location by id, including the stock lines it holds.")]
+    async fn get_location(
+        &self,
+        Parameters(p): Parameters<DeleteByIdParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match locations::get_location(&self.client, p.id, p.store_id).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Create a storage location. `code` is required and unique within the store.")]
+    async fn insert_location(
+        &self,
+        Parameters(p): Parameters<InsertLocationParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match locations::insert_location(&self.client, p.code, p.name, p.on_hold, p.location_type_id, p.volume, p.id, p.store_id).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Update a storage location. Set onHold=false to release an on-hold location (e.g. Quarantine) so FEFO can allocate its stock again.")]
+    async fn update_location(
+        &self,
+        Parameters(p): Parameters<UpdateLocationParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match locations::update_location(&self.client, p.id, p.code, p.name, p.on_hold, p.location_type_id, p.volume, p.store_id).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Delete a storage location. Fails with LocationInUse if it still holds stock.")]
+    async fn delete_location(
+        &self,
+        Parameters(p): Parameters<DeleteByIdParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match locations::delete_location(&self.client, p.id, p.store_id).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Move a stock line to a different storage location (creates a linked stock relocation). Moves the whole line unless numberOfPacks is given. Use this to move a quarantined batch to a usable location so it can be issued.")]
+    async fn relocate_stock(
+        &self,
+        Parameters(p): Parameters<RelocateStockParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match locations::relocate_stock(&self.client, p.stock_line_id, p.to_location_id, p.number_of_packs, p.comment, p.store_id).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    // -------- Cold-chain equipment (assets) --------
+
+    #[tool(description = "List cold-chain equipment / assets (fridges, freezers, cold boxes). Filter by class/category/type id (see list_asset_classes/categories/types) or functioningOnly. Returns id, assetNumber, serialNumber, class/category/type, current status, locations, warranty/replacement dates.")]
+    async fn list_assets(
+        &self,
+        Parameters(p): Parameters<ListAssetsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match assets::list_assets(&self.client, p.search, p.class_id, p.category_id, p.type_id, p.functioning_only, p.first, p.offset, p.store_id).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Get a single asset (cold-chain equipment) by id — full detail including locations, status log, warranty dates, and properties.")]
+    async fn get_asset(
+        &self,
+        Parameters(p): Parameters<DeleteByIdParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match assets::get_asset(&self.client, p.id, p.store_id).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Register a new cold-chain asset. Provide a catalogueItemId (preferred — carries class/category/type) OR classId+categoryId+typeId. Optional serial, dates, donor, notes, properties.")]
+    async fn insert_asset(
+        &self,
+        Parameters(p): Parameters<InsertAssetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match assets::insert_asset(&self.client, p.asset_number, p.serial_number, p.catalogue_item_id, p.class_id, p.category_id, p.type_id, p.installation_date, p.warranty_start, p.warranty_end, p.donor_name_id, p.notes, p.properties, p.id, p.store_id).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Update an asset. Use locationIds to link the equipment to the storage location(s) it cools. Nullable fields (serial, dates, donor, catalogue item) are set when provided.")]
+    async fn update_asset(
+        &self,
+        Parameters(p): Parameters<UpdateAssetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match assets::update_asset(&self.client, p.id, p.asset_number, p.serial_number, p.catalogue_item_id, p.notes, p.installation_date, p.replacement_date, p.warranty_start, p.warranty_end, p.donor_name_id, p.needs_replacement, p.location_ids, p.properties, p.store_id).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Delete an asset (cold-chain equipment).")]
+    async fn delete_asset(
+        &self,
+        Parameters(p): Parameters<DeleteByIdParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match assets::delete_asset(&self.client, p.id, p.store_id).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Record a functional-status change for an asset (writes an asset log). status: NOT_IN_USE | FUNCTIONING | FUNCTIONING_BUT_NEEDS_ATTENTION | NOT_FUNCTIONING | DECOMMISSIONED | UNSERVICEABLE. e.g. mark a fridge NOT_FUNCTIONING.")]
+    async fn set_asset_status(
+        &self,
+        Parameters(p): Parameters<SetAssetStatusParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match assets::set_asset_status(&self.client, p.asset_id, p.status, p.reason_id, p.comment, p.log_datetime, p.store_id).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "List asset classes (top of the catalogue hierarchy). Central data — no store context.")]
+    async fn list_asset_classes(
+        &self,
+        Parameters(p): Parameters<PaginationParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match assets::list_asset_classes(&self.client, p.first, p.offset).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "List asset categories, optionally filtered by classId. Central data — no store context.")]
+    async fn list_asset_categories(
+        &self,
+        Parameters(p): Parameters<ListAssetCategoriesParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match assets::list_asset_categories(&self.client, p.class_id, p.first, p.offset).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "List asset types, optionally filtered by categoryId. Central data — no store context.")]
+    async fn list_asset_types(
+        &self,
+        Parameters(p): Parameters<ListAssetTypesParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match assets::list_asset_types(&self.client, p.category_id, p.first, p.offset).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "List asset catalogue items (specific equipment models). Optional code search. Use an item's id as catalogueItemId in insert_asset. Central data — no store context.")]
+    async fn list_asset_catalogue_items(
+        &self,
+        Parameters(p): Parameters<ListAssetCatalogueItemsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match assets::list_asset_catalogue_items(&self.client, p.search, p.first, p.offset).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    // -------- Cold-chain monitoring --------
+
+    #[tool(description = "List temperature sensors in a store (id, name, serial, isActive, batteryLevel, logInterval, lastConnectionDatetime, location, current breach).")]
+    async fn list_sensors(
+        &self,
+        Parameters(p): Parameters<ListSensorsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match cold_chain::list_sensors(&self.client, p.first, p.offset, p.store_id).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Get temperature log readings, optionally filtered by sensorId and a fromDatetime/toDatetime window. Useful for charting or audit.")]
+    async fn get_temperature_logs(
+        &self,
+        Parameters(p): Parameters<GetTemperatureLogsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match cold_chain::get_temperature_logs(&self.client, p.sensor_id, p.from_datetime, p.to_datetime, p.first, p.offset, p.store_id).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "List temperature breaches (excursions): type, start/end, duration, sensor, threshold, acknowledged state. Set unacknowledgedOnly=true for open breaches.")]
+    async fn list_temperature_breaches(
+        &self,
+        Parameters(p): Parameters<ListTemperatureBreachesParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match cold_chain::list_temperature_breaches(&self.client, p.unacknowledged_only, p.first, p.offset, p.store_id).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Update a sensor — rename, (de)activate, or assign it to a storage location (locationId from list_locations).")]
+    async fn update_sensor(
+        &self,
+        Parameters(p): Parameters<UpdateSensorParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match cold_chain::update_sensor(&self.client, p.id, p.name, p.is_active, p.location_id, p.store_id).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Acknowledge a temperature breach (marks it acknowledged, with an optional comment).")]
+    async fn acknowledge_temperature_breach(
+        &self,
+        Parameters(p): Parameters<AcknowledgeTemperatureBreachParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match cold_chain::acknowledge_temperature_breach(&self.client, p.id, p.comment, p.store_id).await {
             Ok(t) => ok(t),
             Err(e) => err(e),
         }

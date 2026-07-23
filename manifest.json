@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "open-msupply",
   "display_name": "Open mSupply",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Connect AI assistants to Open mSupply for querying inventory, stock levels, shipments, requisitions, and more.",
   "long_description": "The Open mSupply MCP server enables AI assistants to interact with your Open mSupply instance via the GraphQL API. Query stock levels, search items, track shipments, view invoices, and get dashboard summaries - all through natural language.\n\nShips as a self-contained native binary - no runtime required. Requires a running Open mSupply server (v2.x+) with valid credentials.",
   "author": {
@@ -362,6 +362,90 @@
     {
       "name": "run_report",
       "description": "Run a report (generateReport); HTML output is inlined, PDF/Excel return a download URL."
+    },
+    {
+      "name": "list_locations",
+      "description": "List storage locations (discover a locationId)."
+    },
+    {
+      "name": "get_location",
+      "description": "Get a storage location and the stock it holds."
+    },
+    {
+      "name": "insert_location",
+      "description": "Create a storage location."
+    },
+    {
+      "name": "update_location",
+      "description": "Update a location; set onHold=false to release Quarantine stock."
+    },
+    {
+      "name": "delete_location",
+      "description": "Delete a storage location (fails if in use)."
+    },
+    {
+      "name": "relocate_stock",
+      "description": "Move a stock line to a different location (stock relocation)."
+    },
+    {
+      "name": "list_assets",
+      "description": "List cold-chain equipment / assets, filterable by class/category/type/status."
+    },
+    {
+      "name": "get_asset",
+      "description": "Get a single asset with full detail."
+    },
+    {
+      "name": "insert_asset",
+      "description": "Register a new cold-chain asset."
+    },
+    {
+      "name": "update_asset",
+      "description": "Update an asset, incl. linking it to storage locations."
+    },
+    {
+      "name": "delete_asset",
+      "description": "Delete an asset."
+    },
+    {
+      "name": "set_asset_status",
+      "description": "Record a functional-status change for an asset (asset log)."
+    },
+    {
+      "name": "list_asset_classes",
+      "description": "List asset catalogue classes."
+    },
+    {
+      "name": "list_asset_categories",
+      "description": "List asset catalogue categories (optionally by classId)."
+    },
+    {
+      "name": "list_asset_types",
+      "description": "List asset catalogue types (optionally by categoryId)."
+    },
+    {
+      "name": "list_asset_catalogue_items",
+      "description": "List asset catalogue items (equipment models)."
+    },
+    {
+      "name": "list_sensors",
+      "description": "List temperature sensors."
+    },
+    {
+      "name": "get_temperature_logs",
+      "description": "Get temperature log readings (by sensor / time window)."
+    },
+    {
+      "name": "list_temperature_breaches",
+      "description": "List temperature breaches (excursions)."
+    },
+    {
+      "name": "update_sensor",
+      "description": "Rename, (de)activate, or assign a sensor to a location."
+    },
+    {
+      "name": "acknowledge_temperature_breach",
+      "description": "Acknowledge a temperature breach."
     }
   ],
   "compatibility": {
