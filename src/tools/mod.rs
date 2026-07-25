@@ -3203,7 +3203,7 @@ impl OmSupplyServer {
         }
     }
 
-    #[tool(description = "Create a vaccine course under a program. name and programId are required; coverageRate/wastageRate/useInGapsCalculations/canSkipDose are required by the server. vaccineItems/doses default to empty. storeConfigs sets the initial per-store config (vaccine_course_store_config).")]
+    #[tool(description = "Create a vaccine course under a program. Central-server instance only (vaccine course writes are central data). name and programId are required; coverageRate/wastageRate/useInGapsCalculations/canSkipDose are required by the server. vaccineItems/doses default to empty. storeConfigs sets the initial per-store config (vaccine_course_store_config).")]
     async fn insert_vaccine_course(
         &self,
         Parameters(p): Parameters<InsertVaccineCourseParams>,
@@ -3230,7 +3230,7 @@ impl OmSupplyServer {
         }
     }
 
-    #[tool(description = "Update a vaccine course. Full-replace: vaccineItems and doses are required and REPLACE the existing lists (fetch with get_vaccine_course, modify, resend). storeConfigs replaces the per-store config (vaccine_course_store_config) — this is how you CRUD store config: include an entry to upsert it, omit it from the list to drop it.")]
+    #[tool(description = "Update a vaccine course. Central-server instance only. Full-replace: vaccineItems and doses are required and REPLACE the existing lists (fetch with get_vaccine_course, modify, resend). storeConfigs replaces the per-store config (vaccine_course_store_config) — this is how you CRUD store config: include an entry to upsert it, omit it from the list to drop it.")]
     async fn update_vaccine_course(
         &self,
         Parameters(p): Parameters<UpdateVaccineCourseParams>,
@@ -3256,7 +3256,7 @@ impl OmSupplyServer {
         }
     }
 
-    #[tool(description = "Delete a vaccine course by id.")]
+    #[tool(description = "Delete a vaccine course by id. Central-server instance only.")]
     async fn delete_vaccine_course(
         &self,
         Parameters(p): Parameters<VaccineCourseIdParams>,

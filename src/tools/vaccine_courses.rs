@@ -50,37 +50,53 @@ const DETAIL_QUERY: &str = r#"
   }
 "#;
 
+// Vaccine-course mutations are nested under centralServer.vaccineCourse — they
+// are NOT top-level Mutations fields. (Queries, by contrast, are top-level.)
+// This selection only resolves on the central server; on a non-central instance
+// the `centralServer` field errors with "Not a central server".
 const INSERT_MUTATION: &str = r#"
   mutation insertVaccineCourse($input: InsertVaccineCourseInput!, $storeId: String!) {
-    insertVaccineCourse(input: $input, storeId: $storeId) {
-      __typename
-      ... on VaccineCourseNode { id name programId }
-      ... on InsertVaccineCourseError { error { __typename description } }
+    centralServer {
+      vaccineCourse {
+        insertVaccineCourse(input: $input, storeId: $storeId) {
+          __typename
+          ... on VaccineCourseNode { id name programId }
+          ... on InsertVaccineCourseError { error { __typename description } }
+        }
+      }
     }
   }
 "#;
 
 const UPDATE_MUTATION: &str = r#"
   mutation updateVaccineCourse($input: UpdateVaccineCourseInput!, $storeId: String!) {
-    updateVaccineCourse(input: $input, storeId: $storeId) {
-      __typename
-      ... on VaccineCourseNode {
-        id name
-        vaccineCourseItems { id itemId }
-        vaccineCourseDoses { id label }
-        storeConfigs { id storeId wastageRate coverageRate }
+    centralServer {
+      vaccineCourse {
+        updateVaccineCourse(input: $input, storeId: $storeId) {
+          __typename
+          ... on VaccineCourseNode {
+            id name
+            vaccineCourseItems { id itemId }
+            vaccineCourseDoses { id label }
+            storeConfigs { id storeId wastageRate coverageRate }
+          }
+          ... on UpdateVaccineCourseError { error { __typename description } }
+        }
       }
-      ... on UpdateVaccineCourseError { error { __typename description } }
     }
   }
 "#;
 
 const DELETE_MUTATION: &str = r#"
   mutation deleteVaccineCourse($vaccineCourseId: String!) {
-    deleteVaccineCourse(vaccineCourseId: $vaccineCourseId) {
-      __typename
-      ... on DeleteResponse { id }
-      ... on DeleteVaccineCourseError { error { __typename description } }
+    centralServer {
+      vaccineCourse {
+        deleteVaccineCourse(vaccineCourseId: $vaccineCourseId) {
+          __typename
+          ... on DeleteResponse { id }
+          ... on DeleteVaccineCourseError { error { __typename description } }
+        }
+      }
     }
   }
 "#;
@@ -239,7 +255,7 @@ pub async fn insert_vaccine_course(
         )
         .await?;
     let response = data
-        .get("insertVaccineCourse")
+        .pointer("/centralServer/vaccineCourse/insertVaccineCourse")
         .ok_or_else(|| AppError::UnexpectedResponse("missing insertVaccineCourse".into()))?;
     let node = unwrap_mutation(response, "VaccineCourseNode")?;
     Ok(format!("Vaccine course created:\n{}", format_record(&node)))
@@ -290,7 +306,7 @@ pub async fn update_vaccine_course(
         )
         .await?;
     let response = data
-        .get("updateVaccineCourse")
+        .pointer("/centralServer/vaccineCourse/updateVaccineCourse")
         .ok_or_else(|| AppError::UnexpectedResponse("missing updateVaccineCourse".into()))?;
     let node = unwrap_mutation(response, "VaccineCourseNode")?;
     Ok(format!("Vaccine course updated:\n{}", format_record(&node)))
@@ -304,7 +320,7 @@ pub async fn delete_vaccine_course(
         .query(DELETE_MUTATION, json!({ "vaccineCourseId": id }))
         .await?;
     let response = data
-        .get("deleteVaccineCourse")
+        .pointer("/centralServer/vaccineCourse/deleteVaccineCourse")
         .ok_or_else(|| AppError::UnexpectedResponse("missing deleteVaccineCourse".into()))?;
     unwrap_mutation(response, "DeleteResponse")?;
     Ok(format!("Vaccine course deleted (id={id})"))
