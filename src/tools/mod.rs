@@ -6,6 +6,7 @@
 //! 3. converts `Result<String, AppError>` into the MCP `CallToolResult` envelope.
 
 mod assets;
+mod batch;
 mod cold_chain;
 mod dashboard;
 mod fulfil;
@@ -1311,6 +1312,37 @@ pub struct AcknowledgeTemperatureBreachParams {
     /// The temperature breach ID
     pub id: String,
     pub comment: Option<String>,
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+// -------- Bulk / batch params --------
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct InsertRequestRequisitionLinesParams {
+    /// The draft request requisition to add lines to
+    #[serde(rename = "requisitionId")]
+    pub requisition_id: String,
+    /// JSON array of lines to add in one call: [{ "itemId": uuid, "requestedQuantity"?: number, "comment"?: string, "id"?: uuid }, ...]
+    pub lines: serde_json::Value,
+    /// If true, apply the lines that succeed even if some fail (default false = all-or-nothing)
+    #[serde(rename = "continueOnError", default, deserialize_with = "flex::opt_bool")]
+    pub continue_on_error: Option<bool>,
+    #[serde(rename = "storeId")]
+    pub store_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct BatchMutationParams {
+    /// The full batch input object (operation lists) passed to the batch mutation verbatim.
+    /// Field names are the camelCase operation lists, e.g. for request requisitions:
+    /// insertRequestRequisitions, insertRequestRequisitionLines, updateRequestRequisitions,
+    /// updateRequestRequisitionLines, deleteRequestRequisitions, deleteRequestRequisitionLines.
+    /// Each element is the same input object shape the single-item insert/update/delete tools use.
+    pub input: serde_json::Value,
+    /// If true, apply operations that succeed even if some fail (default false)
+    #[serde(rename = "continueOnError", default, deserialize_with = "flex::opt_bool")]
+    pub continue_on_error: Option<bool>,
     #[serde(rename = "storeId")]
     pub store_id: Option<String>,
 }
@@ -3266,6 +3298,63 @@ impl OmSupplyServer {
             Err(e) => err(e),
         }
     }
+
+    // -------- Bulk / batch operations --------
+
+    #[tool(description = "Bulk-add many item lines to a draft request requisition in ONE call (instead of calling insert_request_requisition_line per item). Pass `lines` as a JSON array of { itemId, requestedQuantity?, comment? }. Builds a single batchRequestRequisition mutation and reports per-line success/failure.")]
+    async fn insert_request_requisition_lines(
+        &self,
+        Parameters(p): Parameters<InsertRequestRequisitionLinesParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match batch::insert_request_requisition_lines(&self.client, p.requisition_id, p.lines, p.continue_on_error, p.store_id).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Run a batch of request-requisition operations (batchRequestRequisition) in one call — create requisitions and their lines, update, and delete together. `input` is the batch input object with operation lists (insertRequestRequisitions, insertRequestRequisitionLines, updateRequestRequisitionLines, ...). Reports a per-operation summary. For simply adding lines, insert_request_requisition_lines is easier.")]
+    async fn batch_request_requisition(
+        &self,
+        Parameters(p): Parameters<BatchMutationParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match batch::batch_request_requisition(&self.client, p.input, p.continue_on_error, p.store_id).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Run a batch of inbound-shipment operations (batchInboundShipment) in one call — create shipments and all their lines, update, delete together. Ideal for bulk seeding. `input` = batch input object (insertInboundShipments, insertInboundShipmentLines, updateInboundShipmentLines, ...). Reports a per-operation summary.")]
+    async fn batch_inbound_shipment(
+        &self,
+        Parameters(p): Parameters<BatchMutationParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match batch::batch_inbound_shipment(&self.client, p.input, p.continue_on_error, p.store_id).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Run a batch of outbound-shipment operations (batchOutboundShipment) in one call — create shipments and all their lines, update, delete together. `input` = batch input object (insertOutboundShipments, insertOutboundShipmentLines, updateOutboundShipmentLines, ...). Reports a per-operation summary.")]
+    async fn batch_outbound_shipment(
+        &self,
+        Parameters(p): Parameters<BatchMutationParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match batch::batch_outbound_shipment(&self.client, p.input, p.continue_on_error, p.store_id).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
+
+    #[tool(description = "Run a batch of stocktake operations (batchStocktake) in one call — create a stocktake and all its count lines, update, delete together. `input` = batch input object (insertStocktakes, insertStocktakeLines, updateStocktakeLines, ...). Reports a per-operation summary.")]
+    async fn batch_stocktake(
+        &self,
+        Parameters(p): Parameters<BatchMutationParams>,
+    ) -> Result<CallToolResult, McpError> {
+        match batch::batch_stocktake(&self.client, p.input, p.continue_on_error, p.store_id).await {
+            Ok(t) => ok(t),
+            Err(e) => err(e),
+        }
+    }
 }
 
 #[tool_handler]
@@ -3361,5 +3450,7 @@ mod flex_tests {
         check!(UpdateVaccineCourseParams, "vaccineItems");
         check!(UpdateVaccineCourseParams, "doses");
         check!(UpdateVaccineCourseParams, "storeConfigs");
+        check!(InsertRequestRequisitionLinesParams, "lines");
+        check!(BatchMutationParams, "input");
     }
 }

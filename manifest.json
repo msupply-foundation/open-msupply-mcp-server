@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "open-msupply",
   "display_name": "Open mSupply",
-  "version": "0.8.1",
+  "version": "0.9.0",
   "description": "Connect AI assistants to Open mSupply for querying inventory, stock levels, shipments, requisitions, and more.",
   "long_description": "The Open mSupply MCP server enables AI assistants to interact with your Open mSupply instance via the GraphQL API. Query stock levels, search items, track shipments, view invoices, and get dashboard summaries - all through natural language.\n\nShips as a self-contained native binary - no runtime required. Requires a running Open mSupply server (v2.x+) with valid credentials.",
   "author": {
@@ -466,6 +466,26 @@
     {
       "name": "delete_vaccine_course",
       "description": "Delete a vaccine course."
+    },
+    {
+      "name": "insert_request_requisition_lines",
+      "description": "Bulk-add many item lines to a request requisition in one call."
+    },
+    {
+      "name": "batch_request_requisition",
+      "description": "Batch request-requisition operations (create/update/delete requisitions + lines) in one call."
+    },
+    {
+      "name": "batch_inbound_shipment",
+      "description": "Batch inbound-shipment operations in one call (bulk seeding)."
+    },
+    {
+      "name": "batch_outbound_shipment",
+      "description": "Batch outbound-shipment operations in one call."
+    },
+    {
+      "name": "batch_stocktake",
+      "description": "Batch stocktake operations (stocktake + count lines) in one call."
     }
   ],
   "compatibility": {
